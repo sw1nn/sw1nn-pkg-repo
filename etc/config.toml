@@ -1,0 +1,10 @@
+[server]
+# Bind to localhost only - nginx will reverse proxy
+host = "127.0.0.1"
+port = 3000
+
+[storage]
+# Production data path
+data_path = "/var/lib/sw1nn-pkg-repo/data"
+default_repo = "sw1nn"
+default_arch = "x86_64"

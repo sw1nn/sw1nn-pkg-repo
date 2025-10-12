@@ -1,0 +1,47 @@
+# Maintainer: Your Name <your.email@example.com>
+pkgname=sw1nn-pkg-repo
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Self-hosted Arch Linux package repository service with REST API"
+arch=('x86_64')
+url="https://github.com/sw1nn/sw1nn-pkg-repo"
+license=('MIT')
+depends=()
+makedepends=('rust' 'cargo')
+backup=('etc/sw1nn-repo/config.toml')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    unset CARGO_TARGET_DIR
+    cargo build --release --locked
+}
+
+check() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo test --release --locked
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+
+    # Install binaries
+    install -Dm755 "target/release/sw1nn-pkg-repo" "$pkgdir/usr/bin/sw1nn-pkg-repo"
+    install -Dm755 "target/release/sw1nn-pkg-upload" "$pkgdir/usr/bin/sw1nn-pkg-upload"
+
+    # Install systemd service
+    install -Dm644 "etc/sw1nn-pkg-repo.service" "$pkgdir/usr/lib/systemd/system/sw1nn-pkg-repo.service"
+
+    # Install config
+    install -Dm644 "etc/config.toml" "$pkgdir/etc/sw1nn-repo/config.toml"
+
+    # Install nginx config
+    install -Dm644 "etc/nginx-repo.sw1nn.net.conf" "$pkgdir/etc/nginx/sites-available/repo.sw1nn.net.conf"
+
+    # Install documentation
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+    # Create data directory
+    install -dm755 "$pkgdir/var/lib/sw1nn-pkg-repo/data"
+}
