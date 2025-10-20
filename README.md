@@ -108,13 +108,28 @@ sudo pacman -Sy
 sudo pacman -S my-package
 ```
 
-## Directory Structure
+## Project Structure
 
 ```
-data/
-├── sw1nn/            # Repository name
+src/
+├── bin/
+│   ├── sw1nn-pkg-repo.rs      # Service binary
+│   └── sw1nn-pkg-upload.rs    # Upload client binary
+├── lib.rs                      # Library code
+└── ...
+
+dist/                           # Distribution packaging files (not build output)
+└── arch/                       # Arch Linux PKGBUILD and related files
+
+etc/                            # Example configuration files
+├── config.toml                 # Service configuration
+├── sw1nn-pkg-repo.service      # systemd service file
+└── nginx-repo.sw1nn.net.conf   # nginx reverse proxy config
+
+data/                           # Runtime data directory (repository storage)
+├── sw1nn/                      # Repository name
 │   └── os/
-│       └── x86_64/   # Architecture
+│       └── x86_64/             # Architecture
 │           ├── *.pkg.tar.zst        # Package files
 │           ├── sw1nn.db             # Repository database (symlink)
 │           ├── sw1nn.db.tar.gz      # Repository database
@@ -123,6 +138,8 @@ data/
 │           └── metadata/
 │               └── *.json           # Package metadata
 ```
+
+**Note:** The `dist/` directory contains distribution-specific packaging metadata (like PKGBUILD for Arch Linux), not compiled binaries. Cargo build outputs go to the `target/` directory as usual.
 
 ## Development
 
