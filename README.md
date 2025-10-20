@@ -118,7 +118,7 @@ src/
 ├── lib.rs                      # Library code
 └── ...
 
-dist/                           # Distribution packaging files (not build output)
+packaging/                      # Distribution packaging files (not build output)
 └── arch/                       # Arch Linux PKGBUILD and related files
 
 etc/                            # Example configuration files
@@ -139,7 +139,7 @@ data/                           # Runtime data directory (repository storage)
 │               └── *.json           # Package metadata
 ```
 
-**Note:** The `dist/` directory contains distribution-specific packaging metadata (like PKGBUILD for Arch Linux), not compiled binaries. Cargo build outputs go to the `target/` directory as usual.
+**Note:** The `packaging/` directory contains distribution-specific packaging metadata (like PKGBUILD for Arch Linux), not compiled binaries. Cargo build outputs go to the `target/` directory as usual.
 
 ## Development
 
