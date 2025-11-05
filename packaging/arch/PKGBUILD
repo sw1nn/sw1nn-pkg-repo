@@ -31,13 +31,13 @@ package() {
     install -Dm755 "target/release/sw1nn-pkg-upload" "$pkgdir/usr/bin/sw1nn-pkg-upload"
 
     # Install systemd service
-    install -Dm644 "etc/sw1nn-pkg-repo.service" "$pkgdir/usr/lib/systemd/system/sw1nn-pkg-repo.service"
+    install -Dm644 "assets/sw1nn-pkg-repo.service" "$pkgdir/usr/lib/systemd/system/sw1nn-pkg-repo.service"
 
     # Install config
-    install -Dm644 "etc/config.toml" "$pkgdir/etc/sw1nn-repo/config.toml"
+    install -Dm644 "assets/config.toml" "$pkgdir/etc/sw1nn-repo/config.toml"
 
     # Install nginx config
-    install -Dm644 "etc/nginx-repo.sw1nn.net.conf" "$pkgdir/etc/nginx/sites-available/repo.sw1nn.net.conf"
+    install -Dm644 "assets/nginx-repo.sw1nn.net.conf" "$pkgdir/etc/nginx/sites-available/repo.sw1nn.net.conf"
 
     # Install documentation
     install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
