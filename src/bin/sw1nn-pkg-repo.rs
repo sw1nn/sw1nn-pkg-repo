@@ -1,6 +1,17 @@
+use clap::Parser;
 use sw1nn_pkg_repo::run_service;
+
+#[derive(Parser, Debug)]
+#[command(name = "sw1nn-pkg-repo")]
+#[command(about = "Package repository server", long_about = None)]
+struct Args {
+    /// Path to configuration file
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    run_service().await
+    let args = Args::parse();
+    run_service(args.config.as_deref()).await
 }

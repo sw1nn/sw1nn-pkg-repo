@@ -32,12 +32,12 @@ pub fn init_tracing() {
 }
 
 /// Run the package repository service
-pub async fn run_service() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     init_tracing();
 
     // Load configuration
-    let config = Config::load().unwrap_or_else(|_| {
+    let config = Config::load(config_path).unwrap_or_else(|_| {
         tracing::warn!("Failed to load config, using defaults");
         Config::default()
     });

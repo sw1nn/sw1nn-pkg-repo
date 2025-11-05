@@ -17,7 +17,18 @@ The service parses `.pkg.tar.zst` files to extract `.PKGINFO` metadata and gener
 
 ## Configuration
 
-Create a `config.toml` file (optional):
+The service loads configuration from multiple sources in order of precedence (highest to lowest):
+
+1. **Environment variables** (highest priority)
+2. **Command-line specified config file** (`--config`)
+3. **Default config location** (depends on build type):
+   - **Release builds**: `/etc/sw1nn-pkg-repo/config.toml`
+   - **Debug builds**: `./config.toml` (current working directory)
+4. **Built-in defaults** (lowest priority)
+
+### Configuration File
+
+Create a `config.toml` file in one of the locations above:
 
 ```toml
 [server]
@@ -30,7 +41,7 @@ default_repo = "sw1nn"
 default_arch = "x86_64"
 ```
 
-Or use environment variables:
+### Environment Variables
 
 ```bash
 export PKG_REPO_SERVER__HOST="0.0.0.0"
@@ -38,6 +49,14 @@ export PKG_REPO_SERVER__PORT="3000"
 export PKG_REPO_STORAGE__DATA_PATH="./data"
 export PKG_REPO_STORAGE__DEFAULT_REPO="sw1nn"
 export PKG_REPO_STORAGE__DEFAULT_ARCH="x86_64"
+```
+
+### Command-line Options
+
+Specify a custom configuration file:
+
+```bash
+sw1nn-pkg-repo --config /path/to/custom-config.toml
 ```
 
 ## Running
@@ -121,7 +140,7 @@ src/
 packaging/                      # Distribution packaging files (not build output)
 └── arch/                       # Arch Linux PKGBUILD and related files
 
-etc/                            # Example configuration files
+assets/                         # Deployment assets and configuration files
 ├── config.toml                 # Service configuration
 ├── sw1nn-pkg-repo.service      # systemd service file
 └── nginx-repo.sw1nn.net.conf   # nginx reverse proxy config

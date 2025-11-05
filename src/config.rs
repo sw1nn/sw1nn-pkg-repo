@@ -50,14 +50,41 @@ fn default_arch() -> String {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
-        let config = config::Config::builder()
-            .add_source(config::File::with_name("config").required(false))
-            .add_source(config::Environment::with_prefix("PKG_REPO"))
-            .build()
-            .map_err(|e| Error::Config {
-                msg: format!("Failed to load configuration: {}", e),
-            })?;
+    pub fn load(config_path: Option<&str>) -> Result<Self> {
+        let mut builder = config::Config::builder();
+
+        // Add config file sources in order of precedence (lower to higher)
+        if config_path.is_none() {
+            // Release builds: look in /etc/sw1nn-pkg-repo/
+            #[cfg(not(debug_assertions))]
+            {
+                builder = builder.add_source(
+                    config::File::with_name("/etc/sw1nn-pkg-repo/config").required(false),
+                );
+            }
+
+            // Debug builds: look in current working directory
+            #[cfg(debug_assertions)]
+            {
+                builder = builder.add_source(config::File::with_name("config").required(false));
+            }
+        }
+
+        // Custom config path (if specified via --config)
+        if let Some(path) = config_path {
+            builder = builder.add_source(
+                config::File::with_name(path)
+                    .required(true)
+                    .format(config::FileFormat::Toml),
+            );
+        }
+
+        // Environment variables (highest precedence)
+        builder = builder.add_source(config::Environment::with_prefix("PKG_REPO"));
+
+        let config = builder.build().map_err(|e| Error::Config {
+            msg: format!("Failed to load configuration: {}", e),
+        })?;
 
         config.try_deserialize().map_err(|e| Error::Config {
             msg: format!("Failed to deserialize configuration: {}", e),
