@@ -1,34 +1,36 @@
-# Maintainer: Your Name <your.email@example.com>
-pkgname=sw1nn-pkg-repo
+# Maintainer: Neale Swinnerton <neale@sw1nn.com>
+pkgbase=sw1nn-pkg-repo
+pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-upload')
 pkgver=0.2.0
 pkgrel=1
-pkgdesc="Self-hosted Arch Linux package repository service with REST API"
 arch=('x86_64')
 url="https://git.sw1nn.net/sw1nn/sw1nn-pkg-repo"
 license=('MIT')
-depends=()
-makedepends=('rust' 'cargo' 'git')
-backup=('etc/sw1nn-repo/config.toml')
-source=("$pkgname::git+ssh://git.sw1nn.net/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")
+makedepends=('rust' 'cargo' 'git' 'zstd')
+source=("$pkgbase::git+ssh://git.sw1nn.net/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")
 sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir/$pkgname"
+  cd "$srcdir/$pkgbase"
   unset CARGO_TARGET_DIR
+  export ZSTD_SYS_USE_PKG_CONFIG=1
   cargo build --release --locked
 }
 
 check() {
-  cd "$srcdir/$pkgname"
+  cd "$srcdir/$pkgbase"
   cargo test --release --locked
 }
 
-package() {
-  cd "$srcdir/$pkgname"
+package_sw1nn-pkg-repo() {
+  pkgdesc="Self-hosted Arch Linux package repository service with REST API"
+  depends=('zstd')
+  backup=('etc/sw1nn-repo/config.toml')
 
-  # Install binaries
+  cd "$srcdir/$pkgbase"
+
+  # Install binary
   install -Dm755 "target/release/sw1nn-pkg-repo" "$pkgdir/usr/bin/sw1nn-pkg-repo"
-  install -Dm755 "target/release/sw1nn-pkg-upload" "$pkgdir/usr/bin/sw1nn-pkg-upload"
 
   # Install systemd service
   install -Dm644 "assets/sw1nn-pkg-repo.service" "$pkgdir/usr/lib/systemd/system/sw1nn-pkg-repo.service"
@@ -44,4 +46,17 @@ package() {
 
   # Create data directory
   install -dm755 "$pkgdir/var/lib/sw1nn-pkg-repo/data"
+}
+
+package_sw1nn-pkg-upload() {
+  pkgdesc="Upload client for sw1nn-pkg-repo package repository"
+  depends=('zstd')
+
+  cd "$srcdir/$pkgbase"
+
+  # Install binary
+  install -Dm755 "target/release/sw1nn-pkg-upload" "$pkgdir/usr/bin/sw1nn-pkg-upload"
+
+  # Install documentation
+  install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
