@@ -2,6 +2,8 @@
 # Bind to localhost only - nginx will reverse proxy
 host = "127.0.0.1"
 port = 3000
+# Maximum payload size for package uploads (supports human-readable notation: 100KiB, 512MiB, 1GiB, etc.)
+max_payload_size = "512MiB"
 
 [storage]
 # Production data path
