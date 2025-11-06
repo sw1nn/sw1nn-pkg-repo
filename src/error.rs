@@ -14,6 +14,9 @@ pub enum Error {
     #[display("Invalid package: {pkgname}")]
     InvalidPackage { pkgname: String },
 
+    #[display("Package already exists: {pkgname}")]
+    PackageAlreadyExists { pkgname: String },
+
     #[display("Metadata generation failed: {msg}")]
     MetadataGeneration { msg: String },
 
@@ -29,6 +32,7 @@ impl axum::response::IntoResponse for Error {
         let (status, message) = match &self {
             Error::PackageNotFound { .. } => (axum::http::StatusCode::NOT_FOUND, self.to_string()),
             Error::InvalidPackage { .. } => (axum::http::StatusCode::BAD_REQUEST, self.to_string()),
+            Error::PackageAlreadyExists { .. } => (axum::http::StatusCode::CONFLICT, self.to_string()),
             Error::Io(_) | Error::MetadataGeneration { .. } | Error::Config { .. } => {
                 (axum::http::StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
             }

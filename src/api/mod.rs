@@ -43,6 +43,7 @@ pub struct PackageUploadRequest {
     responses(
         (status = 201, description = "Package uploaded successfully", body = Package),
         (status = 400, description = "Invalid package file"),
+        (status = 409, description = "Package already exists"),
         (status = 500, description = "Internal server error")
     ),
     tag = "packages"
@@ -93,6 +94,13 @@ pub async fn upload_package(
 
     // Create filename
     let filename = format!("{}-{}-{}.pkg.tar.zst", pkginfo.pkgname, pkginfo.pkgver, pkginfo.arch);
+
+    // Check if package already exists
+    if state.storage.package_exists(&repo, &pkginfo.arch, &filename).await {
+        return Err(Error::PackageAlreadyExists {
+            pkgname: filename.clone(),
+        });
+    }
 
     // Create package record
     let package = Package {

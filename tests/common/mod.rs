@@ -3,11 +3,14 @@ use sw1nn_pkg_repo::api::{create_api_router, AppState};
 use sw1nn_pkg_repo::config::Config;
 use sw1nn_pkg_repo::repo::serve_file;
 use sw1nn_pkg_repo::storage::Storage;
+use std::io::Write;
 use std::sync::Arc;
+use tar::{Builder, Header};
 use tempfile::TempDir;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use utoipa_rapidoc::RapiDoc;
+use zstd::stream::write::Encoder;
 
 pub async fn setup_test_app() -> Router {
     // Create temporary directory for test data
@@ -45,4 +48,39 @@ pub async fn setup_test_app() -> Router {
         .merge(doc_routes)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
+}
+
+/// Create a test package with the given name, version, and architecture
+pub fn create_test_package(pkgname: &str, pkgver: &str, arch: &str) -> Vec<u8> {
+    // Create .PKGINFO content
+    let pkginfo_content = format!(
+        "pkgname = {}\npkgver = {}\narch = {}\n",
+        pkgname, pkgver, arch
+    );
+
+    // Create a tar archive in memory
+    let mut tar_data = Vec::new();
+    {
+        let mut tar = Builder::new(&mut tar_data);
+
+        // Add .PKGINFO file
+        let mut header = Header::new_gnu();
+        header.set_path(".PKGINFO").unwrap();
+        header.set_size(pkginfo_content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append(&header, pkginfo_content.as_bytes()).unwrap();
+
+        tar.finish().unwrap();
+    }
+
+    // Compress with zstd
+    let mut compressed = Vec::new();
+    {
+        let mut encoder = Encoder::new(&mut compressed, 3).unwrap();
+        encoder.write_all(&tar_data).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    compressed
 }
