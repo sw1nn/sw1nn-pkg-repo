@@ -3,7 +3,7 @@ use axum::http::{Request, StatusCode};
 use tower::util::ServiceExt;
 
 mod common;
-use common::setup_test_app;
+use common::{create_test_package, setup_test_app};
 
 #[tokio::test]
 async fn test_server_starts_and_routes_registered() {
@@ -80,4 +80,80 @@ async fn test_delete_package_not_found() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_upload_duplicate_package_returns_409() {
+    let app = setup_test_app().await;
+
+    // Create a test package
+    let package_data = create_test_package("test-pkg", "1.0.0", "x86_64");
+
+    // Create multipart form data manually with proper binary handling
+    let boundary = "------------------------boundary123456789";
+    let mut body = Vec::new();
+
+    // Start boundary
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"\r\n");
+
+    // Content disposition and type
+    body.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="test-pkg-1.0.0-x86_64.pkg.tar.zst""#);
+    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+
+    // Binary data
+    body.extend_from_slice(&package_data);
+
+    // End boundary
+    body.extend_from_slice(b"\r\n--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"--\r\n");
+
+    // First upload should succeed
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .body(Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // Second upload of the same package should return 409 Conflict
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+
+    // Verify the error message
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let error_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(error_response["error"]
+        .as_str()
+        .unwrap()
+        .contains("Package already exists"));
 }
