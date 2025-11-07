@@ -1,7 +1,11 @@
 use clap::Parser;
+use colored::Colorize;
 use std::path::Path;
 use std::process;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// Re-use the Package struct from the lib
+use sw1nn_pkg_repo::models::Package;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -62,10 +66,23 @@ async fn main() {
     match client.post(url).multipart(form).send().await {
         Ok(response) => {
             if response.status().is_success() {
-                tracing::info!("Successfully uploaded package");
-                match response.text().await {
-                    Ok(body) => tracing::info!("{}", body),
-                    Err(e) => tracing::error!("Error reading response: {}", e),
+                match response.json::<Package>().await {
+                    Ok(package) => {
+                        println!("\n{}", "✓ Package uploaded successfully".green().bold());
+                        println!();
+                        println!("  {}  {}", "Name:".cyan().bold(), package.name);
+                        println!("  {}  {}", "Version:".cyan().bold(), package.version);
+                        println!("  {}  {}", "Arch:".cyan().bold(), package.arch);
+                        println!("  {}  {}", "Repo:".cyan().bold(), package.repo);
+                        println!("  {}  {}", "Filename:".cyan().bold(), package.filename);
+                        println!("  {}  {} bytes", "Size:".cyan().bold(), package.size.to_string().yellow());
+                        println!("  {}  {}", "SHA256:".cyan().bold(), package.sha256.bright_black());
+                        println!("  {}  {}", "Created:".cyan().bold(), package.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
+                        println!();
+                    }
+                    Err(e) => {
+                        tracing::warn!("Successfully uploaded but failed to parse response: {}", e);
+                    }
                 }
             } else {
                 tracing::error!("Upload failed with status: {}", response.status());
