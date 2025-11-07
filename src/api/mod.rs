@@ -84,9 +84,7 @@ pub async fn upload_package(
             pkgname: format!("Failed to read multipart field: {}", e),
         })?
     {
-        let name = field.name().unwrap_or("").to_string();
-
-        match name.as_str() {
+        match field.name().unwrap_or("") {
             "file" => {
                 // Validate filename has .pkg.tar.zst extension
                 if let Some(filename) = field.file_name() {
@@ -153,13 +151,13 @@ pub async fn upload_package(
         pkginfo.pkgname, pkginfo.pkgver, pkginfo.arch
     );
 
-    // Create package record
+    // Create package record - move values to avoid clones
     let package = Package {
-        name: pkginfo.pkgname.clone(),
-        version: pkginfo.pkgver.clone(),
-        arch: pkginfo.arch.clone(),
-        repo: repo.clone(),
-        filename: filename.clone(),
+        name: pkginfo.pkgname,
+        version: pkginfo.pkgver,
+        arch: pkginfo.arch,
+        repo,
+        filename,
         sha256,
         size,
         created_at: Utc::now(),
@@ -169,7 +167,7 @@ pub async fn upload_package(
     state.storage.store_package(&package, &package_data).await?;
 
     // Regenerate repository database
-    regenerate_repo_db(&state.storage, &repo, &pkginfo.arch).await?;
+    regenerate_repo_db(&state.storage, &package.repo, &package.arch).await?;
 
     Ok((StatusCode::CREATED, Json(package)))
 }
@@ -258,11 +256,11 @@ async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result
 
     // Load pkginfo for each package
     let mut pkg_data = Vec::new();
-    for pkg in &packages {
+    for pkg in packages {
         let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
         let data = tokio::fs::read(&pkg_path).await?;
         let pkginfo = extract_pkginfo(&data)?;
-        pkg_data.push((pkg.clone(), pkginfo));
+        pkg_data.push((pkg, pkginfo));
     }
 
     // Generate databases

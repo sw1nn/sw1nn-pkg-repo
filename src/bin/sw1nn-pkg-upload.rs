@@ -54,7 +54,7 @@ async fn main() {
         }
     };
 
-    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+    let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
     let part = reqwest::multipart::Part::bytes(file).file_name(file_name);
 
     let form = reqwest::multipart::Form::new().part("file", part);
