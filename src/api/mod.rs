@@ -132,17 +132,6 @@ pub async fn upload_package(
         pkginfo.pkgname, pkginfo.pkgver, pkginfo.arch
     );
 
-    // Check if package already exists
-    if state
-        .storage
-        .package_exists(&repo, &pkginfo.arch, &filename)
-        .await?
-    {
-        return Err(Error::PackageAlreadyExists {
-            pkgname: filename.clone(),
-        });
-    }
-
     // Create package record
     let package = Package {
         name: pkginfo.pkgname.clone(),
@@ -155,7 +144,7 @@ pub async fn upload_package(
         created_at: Utc::now(),
     };
 
-    // Store package
+    // Store package (atomic operation - will fail if package already exists)
     state.storage.store_package(&package, &package_data).await?;
 
     // Regenerate repository database

@@ -137,6 +137,9 @@ impl Storage {
     }
 
     /// Store a package file and its metadata
+    ///
+    /// Uses atomic file creation to prevent TOCTOU race conditions.
+    /// If the package already exists, returns PackageAlreadyExists error.
     pub async fn store_package(&self, package: &Package, data: &[u8]) -> Result<()> {
         let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
         let meta_path = self.metadata_path(&package.repo, &package.arch, &package.name)?;
@@ -149,8 +152,23 @@ impl Storage {
             fs::create_dir_all(parent).await?;
         }
 
-        // Write package file
-        let mut file = fs::File::create(&pkg_path).await?;
+        // Atomic write with exclusive creation flag (prevents TOCTOU races)
+        use tokio::fs::OpenOptions;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true) // Fails atomically if file exists
+            .open(&pkg_path)
+            .await
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    Error::PackageAlreadyExists {
+                        pkgname: package.filename.clone(),
+                    }
+                } else {
+                    Error::Io(e)
+                }
+            })?;
+
         file.write_all(data).await?;
         file.sync_all().await?;
 
