@@ -77,7 +77,7 @@ pub async fn upload_package(
     let mut arch = state.config.storage.default_arch.clone();
 
     // Parse multipart form
-    while let Some(field) = multipart
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|e| Error::InvalidPackage {
@@ -100,10 +100,31 @@ pub async fn upload_package(
                     }
                 }
 
-                let data = field.bytes().await.map_err(|e| Error::InvalidPackage {
-                    pkgname: format!("Failed to read file data: {}", e),
-                })?;
-                package_data = Some(data.to_vec());
+                // Stream with size limit enforcement to prevent bypass of Content-Length check
+                let max_size = state.config.server.max_payload_size.as_u64() as usize;
+                let mut accumulated = Vec::new();
+
+                // Read field in chunks, enforcing size limit
+                while let Some(chunk) = field
+                    .chunk()
+                    .await
+                    .map_err(|e| Error::InvalidPackage {
+                        pkgname: format!("Failed to read chunk: {}", e),
+                    })?
+                {
+                    // Check size before accumulating
+                    if accumulated.len() + chunk.len() > max_size {
+                        return Err(Error::PayloadTooLarge {
+                            msg: format!(
+                                "Payload exceeds maximum allowed size of {}",
+                                state.config.server.max_payload_size
+                            ),
+                        });
+                    }
+                    accumulated.extend_from_slice(&chunk);
+                }
+
+                package_data = Some(accumulated);
             }
             "repo" => {
                 repo = field.text().await.unwrap_or(repo);

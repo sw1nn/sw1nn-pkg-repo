@@ -495,3 +495,70 @@ async fn test_path_traversal_with_dots_in_serve() {
     // The real protection is in our validate_path_component function
     assert!(response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn test_upload_streaming_size_exceeds_limit() {
+    let app = setup_test_app().await;
+
+    // Create a test package
+    let package_data = create_test_package("test-pkg", "1.0.0", "x86_64");
+
+    // Create multipart form data with artificially large padding to exceed 512 MiB
+    // This tests that our streaming validation enforces the limit during chunk reading
+    let boundary = "------------------------boundary123456789";
+    let mut body = Vec::new();
+
+    // Start boundary
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"\r\n");
+
+    // Content disposition and type
+    body.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="test-pkg-1.0.0-x86_64.pkg.tar.zst""#);
+    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+
+    // Binary data - actual package
+    body.extend_from_slice(&package_data);
+
+    // Add 513 MiB of padding to exceed the 512 MiB limit
+    let padding_size = 513 * 1024 * 1024; // 513 MiB
+    body.reserve(padding_size);
+    body.extend(std::iter::repeat(0u8).take(padding_size));
+
+    // End boundary
+    body.extend_from_slice(b"\r\n--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"--\r\n");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .header("Content-Length", body.len().to_string())
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should be rejected with 413 Payload Too Large
+    // Both Content-Length check and streaming validation should catch this
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+    // Verify the error message
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let error_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        error_response["error"]
+            .as_str()
+            .unwrap()
+            .contains("exceeds maximum allowed size")
+    );
+}
