@@ -1,38 +1,54 @@
-use std::env;
+use clap::Parser;
 use std::path::Path;
 use std::process;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Parser, Debug)]
+#[command(name = "sw1nn-pkg-upload")]
+#[command(about = "Upload packages to sw1nn package repository", long_about = None)]
+#[command(version = VERSION)]
+struct Args {
+    /// Path to package file (.pkg.tar.zst)
+    package_file: String,
+}
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "sw1nn_pkg_upload=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
-    if args.len() != 2 {
-        eprintln!("Usage: {} <package.pkg.tar.zst>", args[0]);
-        process::exit(1);
-    }
+    tracing::info!("sw1nn-pkg-upload version {}", VERSION);
 
-    let pkg_file = &args[1];
+    let args = Args::parse();
+    let pkg_file = &args.package_file;
     let path = Path::new(pkg_file);
 
     if !path.exists() {
-        eprintln!("Error: File '{}' does not exist", pkg_file);
+        tracing::error!("File '{}' does not exist", pkg_file);
         process::exit(1);
     }
 
     if !pkg_file.ends_with(".pkg.tar.zst") {
-        eprintln!("Error: File must be a .pkg.tar.zst package");
+        tracing::error!("File must be a .pkg.tar.zst package");
         process::exit(1);
     }
 
     let url = "https://repo.sw1nn.net/api/packages";
 
-    println!("Uploading {} to {}", pkg_file, url);
+    tracing::info!("Uploading {} to {}", pkg_file, url);
 
     let client = reqwest::Client::new();
     let file = match tokio::fs::read(pkg_file).await {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("Error reading file: {}", e);
+            tracing::error!("Error reading file: {}", e);
             process::exit(1);
         }
     };
@@ -47,22 +63,22 @@ async fn main() {
     match client.post(url).multipart(form).send().await {
         Ok(response) => {
             if response.status().is_success() {
-                println!("Successfully uploaded package");
+                tracing::info!("Successfully uploaded package");
                 match response.text().await {
-                    Ok(body) => println!("{}", body),
-                    Err(e) => eprintln!("Error reading response: {}", e),
+                    Ok(body) => tracing::info!("{}", body),
+                    Err(e) => tracing::error!("Error reading response: {}", e),
                 }
             } else {
-                eprintln!("Upload failed with status: {}", response.status());
+                tracing::error!("Upload failed with status: {}", response.status());
                 match response.text().await {
-                    Ok(body) => eprintln!("Error: {}", body),
-                    Err(e) => eprintln!("Error reading response: {}", e),
+                    Ok(body) => tracing::error!("Error: {}", body),
+                    Err(e) => tracing::error!("Error reading response: {}", e),
                 }
                 process::exit(1);
             }
         }
         Err(e) => {
-            eprintln!("Error uploading package: {}", e);
+            tracing::error!("Error uploading package: {}", e);
             process::exit(1);
         }
     }
