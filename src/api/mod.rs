@@ -138,11 +138,20 @@ pub async fn upload_package(
         pkgname: "No package file provided".to_string(),
     })?;
 
-    // Extract .PKGINFO
-    let pkginfo = extract_pkginfo(&package_data)?;
+    // Extract .PKGINFO and calculate checksums in blocking task
+    // These operations do CPU-intensive compression/decompression
+    let package_data_clone = package_data.clone();
+    let (pkginfo, sha256) = tokio::task::spawn_blocking(move || {
+        let pkginfo = extract_pkginfo(&package_data_clone)?;
+        let sha256 = calculate_sha256(&package_data_clone);
+        Ok::<_, Error>((pkginfo, sha256))
+    })
+    .await
+    .map_err(|e| Error::Io(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!("Task join error: {}", e),
+    )))??;
 
-    // Calculate checksums
-    let sha256 = calculate_sha256(&package_data);
     let size = package_data.len() as u64;
 
     // Create filename
@@ -259,7 +268,15 @@ async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result
     for pkg in packages {
         let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
         let data = tokio::fs::read(&pkg_path).await?;
-        let pkginfo = extract_pkginfo(&data)?;
+
+        // Extract pkginfo in blocking task (CPU-intensive decompression)
+        let pkginfo = tokio::task::spawn_blocking(move || extract_pkginfo(&data))
+            .await
+            .map_err(|e| Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Task join error: {}", e),
+            )))??;
+
         pkg_data.push((pkg, pkginfo));
     }
 
