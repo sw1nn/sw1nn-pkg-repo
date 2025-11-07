@@ -4,10 +4,10 @@ use crate::metadata::{calculate_sha256, extract_pkginfo, generate_files_db, gene
 use crate::models::{Package, PackageQuery};
 use crate::storage::Storage;
 use axum::{
-    extract::{Multipart, Path as AxumPath, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
     Json,
+    extract::{Multipart, Path as AxumPath, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
 };
 use chrono::Utc;
 use std::sync::Arc;
@@ -44,28 +44,62 @@ pub struct PackageUploadRequest {
         (status = 201, description = "Package uploaded successfully", body = Package),
         (status = 400, description = "Invalid package file"),
         (status = 409, description = "Package already exists"),
+        (status = 413, description = "Payload too large"),
         (status = 500, description = "Internal server error")
     ),
     tag = "packages"
 )]
 pub async fn upload_package(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse> {
+    // Check Content-Length header before processing multipart data
+    if let Some(content_length) = headers.get("content-length") {
+        if let Ok(content_length_str) = content_length.to_str() {
+            if let Ok(content_length_bytes) = content_length_str.parse::<u64>() {
+                let max_size = state.config.server.max_payload_size.as_u64();
+                if content_length_bytes > max_size {
+                    return Err(Error::PayloadTooLarge {
+                        msg: format!(
+                            "Request size {} exceeds maximum allowed size of {}",
+                            byte_unit::Byte::from_u64(content_length_bytes),
+                            state.config.server.max_payload_size
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
     let mut package_data: Option<Vec<u8>> = None;
     let mut repo = state.config.storage.default_repo.clone();
     let mut arch = state.config.storage.default_arch.clone();
 
     // Parse multipart form
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        Error::InvalidPackage {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| Error::InvalidPackage {
             pkgname: format!("Failed to read multipart field: {}", e),
-        }
-    })? {
+        })?
+    {
         let name = field.name().unwrap_or("").to_string();
 
         match name.as_str() {
             "file" => {
+                // Validate filename has .pkg.tar.zst extension
+                if let Some(filename) = field.file_name() {
+                    if !filename.ends_with(".pkg.tar.zst") {
+                        return Err(Error::InvalidPackage {
+                            pkgname: format!(
+                                "Invalid file extension: '{}'. Only .pkg.tar.zst packages are allowed",
+                                filename
+                            ),
+                        });
+                    }
+                }
+
                 let data = field.bytes().await.map_err(|e| Error::InvalidPackage {
                     pkgname: format!("Failed to read file data: {}", e),
                 })?;
@@ -93,10 +127,17 @@ pub async fn upload_package(
     let size = package_data.len() as u64;
 
     // Create filename
-    let filename = format!("{}-{}-{}.pkg.tar.zst", pkginfo.pkgname, pkginfo.pkgver, pkginfo.arch);
+    let filename = format!(
+        "{}-{}-{}.pkg.tar.zst",
+        pkginfo.pkgname, pkginfo.pkgver, pkginfo.arch
+    );
 
     // Check if package already exists
-    if state.storage.package_exists(&repo, &pkginfo.arch, &filename).await {
+    if state
+        .storage
+        .package_exists(&repo, &pkginfo.arch, &filename)
+        .await
+    {
         return Err(Error::PackageAlreadyExists {
             pkgname: filename.clone(),
         });
@@ -142,8 +183,12 @@ pub async fn list_packages(
     State(state): State<Arc<AppState>>,
     Query(query): Query<PackageQuery>,
 ) -> Result<Json<Vec<Package>>> {
-    let repo = query.repo.unwrap_or_else(|| state.config.storage.default_repo.clone());
-    let arch = query.arch.unwrap_or_else(|| state.config.storage.default_arch.clone());
+    let repo = query
+        .repo
+        .unwrap_or_else(|| state.config.storage.default_repo.clone());
+    let arch = query
+        .arch
+        .unwrap_or_else(|| state.config.storage.default_arch.clone());
 
     let mut packages = state.storage.list_packages(&repo, &arch).await?;
 
@@ -176,8 +221,12 @@ pub async fn delete_package(
     AxumPath(name): AxumPath<String>,
     Query(query): Query<PackageQuery>,
 ) -> Result<impl IntoResponse> {
-    let repo = query.repo.unwrap_or_else(|| state.config.storage.default_repo.clone());
-    let arch = query.arch.unwrap_or_else(|| state.config.storage.default_arch.clone());
+    let repo = query
+        .repo
+        .unwrap_or_else(|| state.config.storage.default_repo.clone());
+    let arch = query
+        .arch
+        .unwrap_or_else(|| state.config.storage.default_arch.clone());
 
     // Load package metadata
     let package = state.storage.load_package(&repo, &arch, &name).await?;

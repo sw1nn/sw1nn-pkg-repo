@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::IntoResponse,
 };
 use std::sync::Arc;
@@ -20,7 +20,8 @@ pub async fn serve_file(
     let file_path = if filename.ends_with(".db")
         || filename.ends_with(".files")
         || filename.ends_with(".db.tar.gz")
-        || filename.ends_with(".files.tar.gz") {
+        || filename.ends_with(".files.tar.gz")
+    {
         // Database files are in the repo directory root
         repo_dir.join(&filename)
     } else {

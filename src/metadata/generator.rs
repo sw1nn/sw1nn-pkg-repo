@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::models::{Package, PkgInfo};
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use std::path::Path;
 use tar::Builder;
 use tokio::fs;
@@ -166,10 +166,7 @@ pub async fn generate_repo_db(
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        symlink(
-            format!("{}.db.tar.gz", repo_name),
-            &db_link,
-        )?;
+        symlink(format!("{}.db.tar.gz", repo_name), &db_link)?;
     }
 
     #[cfg(not(unix))]
@@ -226,10 +223,7 @@ pub async fn generate_files_db(
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        symlink(
-            format!("{}.files.tar.gz", repo_name),
-            &files_link,
-        )?;
+        symlink(format!("{}.files.tar.gz", repo_name), &files_link)?;
     }
 
     #[cfg(not(unix))]

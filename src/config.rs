@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use byte_unit::Byte;
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -8,13 +9,16 @@ pub struct Config {
     pub storage: StorageConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct ServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
     #[serde(default = "default_port")]
     pub port: u16,
+
+    #[serde(default = "default_max_payload_size")]
+    pub max_payload_size: Byte,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -35,6 +39,10 @@ fn default_host() -> String {
 
 fn default_port() -> u16 {
     3000
+}
+
+fn default_max_payload_size() -> Byte {
+    Byte::from_u64_with_unit(512, byte_unit::Unit::MiB).unwrap()
 }
 
 fn default_data_path() -> PathBuf {
@@ -96,6 +104,7 @@ impl Config {
             server: ServerConfig {
                 host: default_host(),
                 port: default_port(),
+                max_payload_size: default_max_payload_size(),
             },
             storage: StorageConfig {
                 data_path: default_data_path(),
@@ -103,5 +112,22 @@ impl Config {
                 default_arch: default_arch(),
             },
         }
+    }
+}
+
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field(
+                "max_payload_size",
+                &format!(
+                    "{}",
+                    self.max_payload_size
+                        .get_appropriate_unit(byte_unit::UnitType::Binary)
+                ),
+            )
+            .finish()
     }
 }
