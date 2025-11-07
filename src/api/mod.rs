@@ -136,7 +136,7 @@ pub async fn upload_package(
     if state
         .storage
         .package_exists(&repo, &pkginfo.arch, &filename)
-        .await
+        .await?
     {
         return Err(Error::PackageAlreadyExists {
             pkgname: filename.clone(),
@@ -244,12 +244,12 @@ pub async fn delete_package(
 async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result<()> {
     let packages = storage.list_packages(repo, arch).await?;
 
-    let repo_dir = storage.repo_dir(repo, arch);
+    let repo_dir = storage.repo_dir(repo, arch)?;
 
     // Load pkginfo for each package
     let mut pkg_data = Vec::new();
     for pkg in &packages {
-        let pkg_path = storage.package_path(repo, arch, &pkg.filename);
+        let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
         let data = tokio::fs::read(&pkg_path).await?;
         let pkginfo = extract_pkginfo(&data)?;
         pkg_data.push((pkg.clone(), pkginfo));

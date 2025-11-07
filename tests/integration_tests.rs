@@ -291,3 +291,121 @@ async fn test_upload_invalid_filename_extension() {
             .contains(".pkg.tar.zst")
     );
 }
+
+#[tokio::test]
+async fn test_path_traversal_in_repo_name() {
+    let app = setup_test_app().await;
+    let package_data = create_test_package("test-pkg", "1.0.0", "x86_64");
+
+    // Create multipart form data with path traversal in filename
+    let boundary = "------------------------boundary123456789";
+    let mut body = Vec::new();
+
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(
+        br#"Content-Disposition: form-data; name="file"; filename="test-pkg-1.0.0-x86_64.pkg.tar.zst""#,
+    );
+    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body.extend_from_slice(&package_data);
+    body.extend_from_slice(b"\r\n--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"\r\n");
+
+    // Add repo field with path traversal
+    body.extend_from_slice(b"Content-Disposition: form-data; name=\"repo\"\r\n\r\n");
+    body.extend_from_slice(b"../../../tmp");
+    body.extend_from_slice(b"\r\n--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"--\r\n");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should reject with 400 Bad Request
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let error_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(error_response["error"]
+        .as_str()
+        .unwrap()
+        .contains("Path component cannot contain path separators"));
+}
+
+#[tokio::test]
+async fn test_path_validation_unit() {
+    // This is a unit test to verify our path validation logic works correctly
+    // We test the Storage layer directly
+    use sw1nn_pkg_repo::storage::Storage;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let storage = Storage::new(temp_dir.path());
+
+    // Test that path traversal in repo name is rejected
+    let result = storage.package_path("../../../etc", "x86_64", "test.pkg.tar.zst");
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Path component cannot contain path separators"));
+
+    // Test that path traversal in arch is rejected
+    let result = storage.package_path("myrepo", "../etc", "test.pkg.tar.zst");
+    assert!(result.is_err());
+
+    // Test that ".." is rejected
+    let result = storage.package_path("..", "x86_64", "test.pkg.tar.zst");
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Invalid path component"));
+
+    // Test that "." is rejected
+    let result = storage.package_path(".", "x86_64", "test.pkg.tar.zst");
+    assert!(result.is_err());
+
+    // Test that valid paths work
+    let result = storage.package_path("myrepo", "x86_64", "test.pkg.tar.zst");
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_path_traversal_with_dots_in_serve() {
+    let app = setup_test_app().await;
+
+    // Try to access a file using path traversal with ".." in path components
+    // Note: We can't use ".." directly in the URL path as HTTP clients normalize it
+    // But we can try repo name with dots
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/../os/x86_64/somefile.db")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Axum normalizes the path, but our validation should catch ".." in repo/arch names
+    // This actually results in 404 because axum resolves the path before routing
+    // The real protection is in our validate_path_component function
+    assert!(response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::BAD_REQUEST);
+}

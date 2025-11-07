@@ -14,7 +14,7 @@ pub async fn serve_file(
     State(state): State<Arc<AppState>>,
     Path((repo, arch, filename)): Path<(String, String, String)>,
 ) -> Result<impl IntoResponse> {
-    let repo_dir = state.storage.repo_dir(&repo, &arch);
+    let repo_dir = state.storage.repo_dir(&repo, &arch)?;
 
     // Check if it's a database file (in repo root) or package file
     let file_path = if filename.ends_with(".db")
@@ -26,7 +26,7 @@ pub async fn serve_file(
         repo_dir.join(&filename)
     } else {
         // Package files
-        state.storage.package_path(&repo, &arch, &filename)
+        state.storage.package_path(&repo, &arch, &filename)?
     };
 
     if !file_path.exists() {
