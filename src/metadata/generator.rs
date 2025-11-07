@@ -137,43 +137,67 @@ pub async fn generate_repo_db(
     let db_path = repo_dir.join(format!("{}.db.tar.gz", repo_name));
     let db_link = repo_dir.join(format!("{}.db", repo_name));
 
-    // Create tar.gz archive
-    let file = std::fs::File::create(&db_path)?;
-    let encoder = GzEncoder::new(file, Compression::default());
-    let mut tar = Builder::new(encoder);
+    // Clone data needed for blocking task
+    let packages = packages.to_vec();
+    let db_path_clone = db_path.clone();
 
-    // Add each package's desc file
-    for (pkg, pkginfo) in packages {
-        let desc_content = generate_desc(pkg, pkginfo);
-        let entry_path = format!("{}-{}/desc", pkg.name, pkg.version);
+    // Create tar.gz archive in blocking task (CPU-intensive compression)
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::create(&db_path_clone)?;
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut tar = Builder::new(encoder);
 
-        let mut header = tar::Header::new_gnu();
-        header.set_path(&entry_path)?;
-        header.set_size(desc_content.len() as u64);
-        header.set_mode(0o644);
-        header.set_cksum();
+        // Add each package's desc file
+        for (pkg, pkginfo) in &packages {
+            let desc_content = generate_desc(pkg, pkginfo);
+            let entry_path = format!("{}-{}/desc", pkg.name, pkg.version);
 
-        tar.append(&header, desc_content.as_bytes())?;
-    }
+            let mut header = tar::Header::new_gnu();
+            header.set_path(&entry_path)?;
+            header.set_size(desc_content.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
 
-    tar.finish()?;
+            tar.append(&header, desc_content.as_bytes())?;
+        }
+
+        tar.finish()?;
+        Ok::<_, crate::error::Error>(())
+    })
+    .await
+    .map_err(|e| crate::error::Error::Io(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!("Task join error: {}", e),
+    )))??;
 
     // Create symlink
     if db_link.exists() {
         fs::remove_file(&db_link).await?;
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::symlink;
-        symlink(format!("{}.db.tar.gz", repo_name), &db_link)?;
-    }
+    let repo_name = repo_name.to_string();
+    let db_link_clone = db_link.clone();
 
-    #[cfg(not(unix))]
-    {
-        // On non-Unix systems, just copy the file
-        fs::copy(&db_path, &db_link).await?;
-    }
+    // Symlink creation in blocking task
+    tokio::task::spawn_blocking(move || {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(format!("{}.db.tar.gz", repo_name), &db_link_clone)?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix systems, just copy the file
+            std::fs::copy(&db_path, &db_link_clone)?;
+        }
+        Ok::<_, std::io::Error>(())
+    })
+    .await
+    .map_err(|e| std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!("Task join error: {}", e),
+    ))??;
 
     Ok(())
 }
@@ -187,50 +211,74 @@ pub async fn generate_files_db(
     let files_path = repo_dir.join(format!("{}.files.tar.gz", repo_name));
     let files_link = repo_dir.join(format!("{}.files", repo_name));
 
-    // Create tar.gz archive
-    let file = std::fs::File::create(&files_path)?;
-    let encoder = GzEncoder::new(file, Compression::default());
-    let mut tar = Builder::new(encoder);
+    // Clone data needed for blocking task
+    let packages = packages.to_vec();
+    let files_path_clone = files_path.clone();
 
-    // Add each package's files entry (simplified - would need full file listing)
-    for (pkg, pkginfo) in packages {
-        let mut files_content = String::new();
+    // Create tar.gz archive in blocking task (CPU-intensive compression)
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::create(&files_path_clone)?;
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut tar = Builder::new(encoder);
 
-        // Add desc content
-        files_content.push_str(&generate_desc(pkg, pkginfo));
+        // Add each package's files entry (simplified - would need full file listing)
+        for (pkg, pkginfo) in &packages {
+            let mut files_content = String::new();
 
-        // Add placeholder files section
-        files_content.push_str("%FILES%\n\n");
+            // Add desc content
+            files_content.push_str(&generate_desc(pkg, pkginfo));
 
-        let entry_path = format!("{}-{}/files", pkg.name, pkg.version);
+            // Add placeholder files section
+            files_content.push_str("%FILES%\n\n");
 
-        let mut header = tar::Header::new_gnu();
-        header.set_path(&entry_path)?;
-        header.set_size(files_content.len() as u64);
-        header.set_mode(0o644);
-        header.set_cksum();
+            let entry_path = format!("{}-{}/files", pkg.name, pkg.version);
 
-        tar.append(&header, files_content.as_bytes())?;
-    }
+            let mut header = tar::Header::new_gnu();
+            header.set_path(&entry_path)?;
+            header.set_size(files_content.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
 
-    tar.finish()?;
+            tar.append(&header, files_content.as_bytes())?;
+        }
+
+        tar.finish()?;
+        Ok::<_, crate::error::Error>(())
+    })
+    .await
+    .map_err(|e| crate::error::Error::Io(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!("Task join error: {}", e),
+    )))??;
 
     // Create symlink
     if files_link.exists() {
         fs::remove_file(&files_link).await?;
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::symlink;
-        symlink(format!("{}.files.tar.gz", repo_name), &files_link)?;
-    }
+    let repo_name = repo_name.to_string();
+    let files_link_clone = files_link.clone();
 
-    #[cfg(not(unix))]
-    {
-        // On non-Unix systems, just copy the file
-        fs::copy(&files_path, &files_link).await?;
-    }
+    // Symlink creation in blocking task
+    tokio::task::spawn_blocking(move || {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(format!("{}.files.tar.gz", repo_name), &files_link_clone)?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix systems, just copy the file
+            std::fs::copy(&files_path, &files_link_clone)?;
+        }
+        Ok::<_, std::io::Error>(())
+    })
+    .await
+    .map_err(|e| std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!("Task join error: {}", e),
+    ))??;
 
     Ok(())
 }
