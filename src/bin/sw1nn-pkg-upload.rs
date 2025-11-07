@@ -70,14 +70,14 @@ async fn main() {
                     Ok(package) => {
                         println!("\n{}", "✓ Package uploaded successfully".green().bold());
                         println!();
-                        println!("  {}  {}", "Name:".cyan().bold(), package.name);
-                        println!("  {}  {}", "Version:".cyan().bold(), package.version);
-                        println!("  {}  {}", "Arch:".cyan().bold(), package.arch);
-                        println!("  {}  {}", "Repo:".cyan().bold(), package.repo);
-                        println!("  {}  {}", "Filename:".cyan().bold(), package.filename);
-                        println!("  {}  {} bytes", "Size:".cyan().bold(), package.size.to_string().yellow());
-                        println!("  {}  {}", "SHA256:".cyan().bold(), package.sha256.bright_black());
-                        println!("  {}  {}", "Created:".cyan().bold(), package.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
+                        println!("  {:>9}  {}", "Name:".cyan().bold(), package.name);
+                        println!("  {:>9}  {}", "Version:".cyan().bold(), package.version);
+                        println!("  {:>9}  {}", "Arch:".cyan().bold(), package.arch);
+                        println!("  {:>9}  {}", "Repo:".cyan().bold(), package.repo);
+                        println!("  {:>9}  {}", "Filename:".cyan().bold(), package.filename);
+                        println!("  {:>9}  {} bytes", "Size:".cyan().bold(), package.size.to_string().yellow());
+                        println!("  {:>9}  {}", "SHA256:".cyan().bold(), package.sha256.bright_black());
+                        println!("  {:>9}  {}", "Created:".cyan().bold(), package.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
                         println!();
                     }
                     Err(e) => {
