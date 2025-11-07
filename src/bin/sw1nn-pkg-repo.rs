@@ -1,9 +1,12 @@
 use clap::Parser;
 use sw1nn_pkg_repo::run_service;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Parser, Debug)]
 #[command(name = "sw1nn-pkg-repo")]
 #[command(about = "Package repository server", long_about = None)]
+#[command(version = VERSION)]
 struct Args {
     /// Path to configuration file
     #[arg(short, long, value_name = "FILE")]

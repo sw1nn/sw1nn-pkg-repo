@@ -36,6 +36,9 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Initialize tracing
     init_tracing();
 
+    // Log version early
+    tracing::info!("sw1nn-pkg-repo version {}", env!("CARGO_PKG_VERSION"));
+
     // Load configuration
     let config = Config::load(config_path).unwrap_or_else(|_| {
         tracing::warn!("Failed to load config, using defaults");
