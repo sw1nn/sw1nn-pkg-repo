@@ -388,6 +388,92 @@ async fn test_path_validation_unit() {
 }
 
 #[tokio::test]
+async fn test_concurrent_uploads_same_package() {
+    // Both requests need to share the same storage to test TOCTOU properly
+    let app = setup_test_app().await;
+    let package_data = create_test_package("concurrent-test", "1.0.0", "x86_64");
+
+    // Create multipart form data
+    let boundary = "------------------------boundary123456789";
+    let mut body = Vec::new();
+
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(
+        br#"Content-Disposition: form-data; name="file"; filename="concurrent-test-1.0.0-x86_64.pkg.tar.zst""#,
+    );
+    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body.extend_from_slice(&package_data);
+    body.extend_from_slice(b"\r\n--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"--\r\n");
+
+    // Attempt concurrent uploads of the same package
+    let body1 = body.clone();
+    let body2 = body.clone();
+
+    // Clone the app to simulate concurrent requests to same server
+    let app1 = app.clone();
+    let app2 = app;
+
+    let (result1, result2) = tokio::join!(
+        app1.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .body(Body::from(body1))
+                .unwrap(),
+        ),
+        app2.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .body(Body::from(body2))
+                .unwrap(),
+        )
+    );
+
+    let result1 = result1.unwrap();
+    let result2 = result2.unwrap();
+
+    // Exactly one should succeed (201), one should fail with 409 (Conflict)
+    let statuses = [result1.status(), result2.status()];
+    assert!(
+        statuses.contains(&StatusCode::CREATED),
+        "One request should succeed with 201 CREATED"
+    );
+    assert!(
+        statuses.contains(&StatusCode::CONFLICT),
+        "One request should fail with 409 CONFLICT"
+    );
+
+    // Verify the error message on the failed request
+    let failed_response = if result1.status() == StatusCode::CONFLICT {
+        result1
+    } else {
+        result2
+    };
+
+    let body = axum::body::to_bytes(failed_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let error_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(error_response["error"]
+        .as_str()
+        .unwrap()
+        .contains("Package already exists"));
+}
+
+#[tokio::test]
 async fn test_path_traversal_with_dots_in_serve() {
     let app = setup_test_app().await;
 
