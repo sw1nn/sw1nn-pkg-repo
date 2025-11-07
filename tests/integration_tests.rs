@@ -209,17 +209,11 @@ async fn test_upload_payload_too_large() {
 
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
 
-    // Verify the error message
+    // Verify the error message contains size information (safe to expose)
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let error_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(
-        error_response["error"]
-            .as_str()
-            .unwrap()
-            .contains("Payload too large")
-    );
     assert!(
         error_response["error"]
             .as_str()
@@ -342,10 +336,11 @@ async fn test_path_traversal_in_repo_name() {
         .await
         .unwrap();
     let error_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    // Error message is now sanitized to avoid leaking internal implementation details
     assert!(error_response["error"]
         .as_str()
         .unwrap()
-        .contains("Path component cannot contain path separators"));
+        .contains("Invalid request parameters"));
 }
 
 #[tokio::test]
