@@ -4,7 +4,7 @@ pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-upload')
 pkgver=0.7.0
 pkgrel=1
 arch=('x86_64')
-url="https://git.sw1nn.net/sw1nn/sw1nn-pkg-repo"
+url="https://git.sw1nn.net/r/sw1nn-pkg-repo.git/"
 license=('MIT')
 makedepends=('rust' 'cargo' 'git' 'zstd')
 source=("$pkgbase::git+ssh://git.sw1nn.net/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")

@@ -1,0 +1,21 @@
+# Cocogitto configuration for sw1nn-pkg-repo
+from_latest_tag = false
+ignore_merge_commits = true
+ignore_fixup_commits = true
+disable_changelog = false
+disable_bump_commit = false
+
+# Tag prefix for version tags
+tag_prefix = "v"
+
+# Pre-bump hooks run before creating the version commit
+# These update the Cargo.toml and PKGBUILD with the new version
+pre_bump_hooks = [
+  "cargo set-version {{version}}",
+  "sed -i 's/^pkgver=.*/pkgver={{version}}/' packaging/arch/PKGBUILD",
+  "sed -i 's/^pkgrel=.*/pkgrel=1/' packaging/arch/PKGBUILD",
+  "git add Cargo.toml Cargo.lock packaging/arch/PKGBUILD",
+]
+
+# Post-bump hooks run after the version commit and tag are created
+post_bump_hooks = ["git push", "git push origin v{{version}}"]
