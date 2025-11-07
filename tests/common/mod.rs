@@ -1,10 +1,10 @@
 use axum::Router;
-use sw1nn_pkg_repo::api::{create_api_router, AppState};
+use std::io::Write;
+use std::sync::Arc;
+use sw1nn_pkg_repo::api::{AppState, create_api_router};
 use sw1nn_pkg_repo::config::Config;
 use sw1nn_pkg_repo::repo::serve_file;
 use sw1nn_pkg_repo::storage::Storage;
-use std::io::Write;
-use std::sync::Arc;
 use tar::{Builder, Header};
 use tempfile::TempDir;
 use tower_http::cors::CorsLayer;
@@ -38,8 +38,8 @@ pub async fn setup_test_app() -> Router {
         .with_state(state.clone());
 
     // Build documentation routes
-    let doc_routes =
-        Router::new().merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));
+    let doc_routes = Router::new()
+        .merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));
 
     // Combine all routes
     Router::new()

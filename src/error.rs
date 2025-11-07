@@ -7,7 +7,6 @@ pub enum Error {
     #[from]
     Io(std::io::Error),
 
-
     #[display("Package not found: {pkgname}")]
     PackageNotFound { pkgname: String },
 
@@ -16,6 +15,9 @@ pub enum Error {
 
     #[display("Package already exists: {pkgname}")]
     PackageAlreadyExists { pkgname: String },
+
+    #[display("Payload too large: {msg}")]
+    PayloadTooLarge { msg: String },
 
     #[display("Metadata generation failed: {msg}")]
     MetadataGeneration { msg: String },
@@ -32,10 +34,16 @@ impl axum::response::IntoResponse for Error {
         let (status, message) = match &self {
             Error::PackageNotFound { .. } => (axum::http::StatusCode::NOT_FOUND, self.to_string()),
             Error::InvalidPackage { .. } => (axum::http::StatusCode::BAD_REQUEST, self.to_string()),
-            Error::PackageAlreadyExists { .. } => (axum::http::StatusCode::CONFLICT, self.to_string()),
-            Error::Io(_) | Error::MetadataGeneration { .. } | Error::Config { .. } => {
-                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
+            Error::PackageAlreadyExists { .. } => {
+                (axum::http::StatusCode::CONFLICT, self.to_string())
             }
+            Error::PayloadTooLarge { .. } => {
+                (axum::http::StatusCode::PAYLOAD_TOO_LARGE, self.to_string())
+            }
+            Error::Io(_) | Error::MetadataGeneration { .. } | Error::Config { .. } => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                self.to_string(),
+            ),
         };
 
         let body = axum::Json(serde_json::json!({

@@ -69,7 +69,12 @@ impl Storage {
     }
 
     /// Load package metadata
-    pub async fn load_package(&self, repo: &str, arch: &str, package_name: &str) -> Result<Package> {
+    pub async fn load_package(
+        &self,
+        repo: &str,
+        arch: &str,
+        package_name: &str,
+    ) -> Result<Package> {
         let meta_path = self.metadata_path(repo, arch, package_name);
 
         if !meta_path.exists() {

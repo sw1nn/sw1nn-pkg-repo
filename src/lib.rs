@@ -6,15 +6,12 @@ pub mod models;
 pub mod repo;
 pub mod storage;
 
-use api::{create_api_router, AppState};
+use api::{AppState, create_api_router};
+use axum::{Router, routing::get};
 use config::Config;
 use repo::serve_file;
-use storage::Storage;
-use axum::{
-    routing::get,
-    Router,
-};
 use std::sync::Arc;
+use storage::Storage;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -51,7 +48,10 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     let storage = Storage::new(&config.storage.data_path);
 
     // Create shared state
-    let state = Arc::new(AppState { storage, config: config.clone() });
+    let state = Arc::new(AppState {
+        storage,
+        config: config.clone(),
+    });
 
     // Build API routes using utoipa_axum router
     let (api_router, api_doc) = create_api_router(state.clone()).split_for_parts();

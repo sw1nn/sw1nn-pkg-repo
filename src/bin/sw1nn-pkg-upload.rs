@@ -40,7 +40,8 @@ async fn main() {
         process::exit(1);
     }
 
-    let url = "https://repo.sw1nn.net/api/packages";
+    let url = std::env::var("SW1NN_REPO_URL")
+        .unwrap_or_else(|_| "https://repo.sw1nn.net/api/packages".to_string());
 
     tracing::info!("Uploading {} to {}", pkg_file, url);
 
@@ -54,11 +55,9 @@ async fn main() {
     };
 
     let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-    let part = reqwest::multipart::Part::bytes(file)
-        .file_name(file_name);
+    let part = reqwest::multipart::Part::bytes(file).file_name(file_name);
 
-    let form = reqwest::multipart::Form::new()
-        .part("file", part);
+    let form = reqwest::multipart::Form::new().part("file", part);
 
     match client.post(url).multipart(form).send().await {
         Ok(response) => {
