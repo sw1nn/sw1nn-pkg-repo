@@ -46,7 +46,7 @@ fn default_max_payload_size() -> Byte {
 }
 
 fn default_data_path() -> PathBuf {
-    PathBuf::from("./data")
+    PathBuf::from("data")
 }
 
 fn default_repo_name() -> String {
@@ -107,15 +107,10 @@ impl Config {
         }
 
         // Clean up the path (resolve . and .. components)
-        config.storage.data_path = config
-            .storage
-            .data_path
-            .canonicalize()
-            .unwrap_or_else(|_| {
-                // If canonicalize fails (e.g., path doesn't exist yet),
-                // manually clean the path
-                config.storage.data_path.components().collect()
-            });
+        // If canonicalize fails (e.g., path doesn't exist yet), keep the absolute path
+        if let Ok(canonical) = config.storage.data_path.canonicalize() {
+            config.storage.data_path = canonical;
+        }
 
         Ok(config)
     }
@@ -131,9 +126,10 @@ impl Config {
         }
 
         // Clean up the path (resolve . and .. components)
-        data_path = data_path
-            .canonicalize()
-            .unwrap_or_else(|_| data_path.components().collect());
+        // If canonicalize fails (e.g., path doesn't exist yet), keep the absolute path
+        if let Ok(canonical) = data_path.canonicalize() {
+            data_path = canonical;
+        }
 
         Self {
             server: ServerConfig {
