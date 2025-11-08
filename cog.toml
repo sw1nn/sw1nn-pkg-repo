@@ -18,4 +18,8 @@ pre_bump_hooks = [
 ]
 
 # Post-bump hooks run after the version commit and tag are created
-post_bump_hooks = ["git push", "git push origin v{{version}}"]
+post_bump_hooks = [
+  "git push",
+  "git push origin v{{version}}",
+  "cd packaging/arch && makepkg --sign",
+]
