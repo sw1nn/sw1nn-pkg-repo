@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v0.9.0 - 2025-11-08
+#### Miscellaneous Chores
+- build the arch package after a release - (86b2239) - Neale Swinnerton
+
+- - -
+
 ## v0.8.0 - 2025-11-08
 #### Features
 - list all packages when no query parameters provided - (f2a642c) - Neale Swinnerton
