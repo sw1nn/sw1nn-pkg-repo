@@ -492,6 +492,326 @@ async fn test_path_traversal_with_dots_in_serve() {
 }
 
 #[tokio::test]
+async fn test_list_all_packages_no_query_params() {
+    let app = setup_test_app().await;
+
+    // Upload packages to different repos and arches
+    let pkg1 = create_test_package("pkg1", "1.0.0", "x86_64");
+    let pkg2 = create_test_package("pkg2", "2.0.0", "aarch64");
+    let pkg3 = create_test_package("pkg3", "3.0.0", "x86_64");
+
+    let boundary = "------------------------boundary123456789";
+
+    // Upload to default repo (sw1nn) x86_64
+    let mut body1 = Vec::new();
+    body1.extend_from_slice(b"--");
+    body1.extend_from_slice(boundary.as_bytes());
+    body1.extend_from_slice(b"\r\n");
+    body1.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="pkg1-1.0.0-x86_64.pkg.tar.zst""#);
+    body1.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body1.extend_from_slice(&pkg1);
+    body1.extend_from_slice(b"\r\n--");
+    body1.extend_from_slice(boundary.as_bytes());
+    body1.extend_from_slice(b"--\r\n");
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .body(Body::from(body1))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Upload to default repo (sw1nn) aarch64
+    let mut body2 = Vec::new();
+    body2.extend_from_slice(b"--");
+    body2.extend_from_slice(boundary.as_bytes());
+    body2.extend_from_slice(b"\r\n");
+    body2.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="pkg2-2.0.0-aarch64.pkg.tar.zst""#);
+    body2.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body2.extend_from_slice(&pkg2);
+    body2.extend_from_slice(b"\r\n--");
+    body2.extend_from_slice(boundary.as_bytes());
+    body2.extend_from_slice(b"--\r\n");
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .body(Body::from(body2))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Upload to custom repo x86_64
+    let mut body3 = Vec::new();
+    body3.extend_from_slice(b"--");
+    body3.extend_from_slice(boundary.as_bytes());
+    body3.extend_from_slice(b"\r\n");
+    body3.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="pkg3-3.0.0-x86_64.pkg.tar.zst""#);
+    body3.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body3.extend_from_slice(&pkg3);
+    body3.extend_from_slice(b"\r\n--");
+    body3.extend_from_slice(boundary.as_bytes());
+    body3.extend_from_slice(b"\r\n");
+    body3.extend_from_slice(b"Content-Disposition: form-data; name=\"repo\"\r\n\r\n");
+    body3.extend_from_slice(b"custom");
+    body3.extend_from_slice(b"\r\n--");
+    body3.extend_from_slice(boundary.as_bytes());
+    body3.extend_from_slice(b"--\r\n");
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .body(Body::from(body3))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // List all packages with no query params
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/packages")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let packages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    // Should return all 3 packages
+    assert_eq!(packages.len(), 3);
+
+    // Verify we have all the packages
+    let names: Vec<&str> = packages.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"pkg1"));
+    assert!(names.contains(&"pkg2"));
+    assert!(names.contains(&"pkg3"));
+}
+
+#[tokio::test]
+async fn test_list_packages_filter_by_name() {
+    let app = setup_test_app().await;
+
+    // Upload test packages
+    let pkg1 = create_test_package("test-foo", "1.0.0", "x86_64");
+    let pkg2 = create_test_package("test-bar", "2.0.0", "x86_64");
+
+    let boundary = "------------------------boundary123456789";
+
+    for (pkg_data, name) in [(pkg1, "test-foo"), (pkg2, "test-bar")] {
+        let mut body = Vec::new();
+        body.extend_from_slice(b"--");
+        body.extend_from_slice(boundary.as_bytes());
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(format!(r#"Content-Disposition: form-data; name="file"; filename="{}-1.0.0-x86_64.pkg.tar.zst""#, name).as_bytes());
+        body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+        body.extend_from_slice(&pkg_data);
+        body.extend_from_slice(b"\r\n--");
+        body.extend_from_slice(boundary.as_bytes());
+        body.extend_from_slice(b"--\r\n");
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/packages")
+                    .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // Filter by name containing "foo"
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/packages?name=foo")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let packages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    // Should only return test-foo
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0]["name"].as_str().unwrap(), "test-foo");
+}
+
+#[tokio::test]
+async fn test_list_packages_filter_by_repo() {
+    let app = setup_test_app().await;
+
+    // Upload to different repos
+    let pkg1 = create_test_package("pkg1", "1.0.0", "x86_64");
+    let pkg2 = create_test_package("pkg2", "2.0.0", "x86_64");
+
+    let boundary = "------------------------boundary123456789";
+
+    // Upload to default repo
+    let mut body1 = Vec::new();
+    body1.extend_from_slice(b"--");
+    body1.extend_from_slice(boundary.as_bytes());
+    body1.extend_from_slice(b"\r\n");
+    body1.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="pkg1-1.0.0-x86_64.pkg.tar.zst""#);
+    body1.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body1.extend_from_slice(&pkg1);
+    body1.extend_from_slice(b"\r\n--");
+    body1.extend_from_slice(boundary.as_bytes());
+    body1.extend_from_slice(b"--\r\n");
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .body(Body::from(body1))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Upload to custom repo
+    let mut body2 = Vec::new();
+    body2.extend_from_slice(b"--");
+    body2.extend_from_slice(boundary.as_bytes());
+    body2.extend_from_slice(b"\r\n");
+    body2.extend_from_slice(br#"Content-Disposition: form-data; name="file"; filename="pkg2-2.0.0-x86_64.pkg.tar.zst""#);
+    body2.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body2.extend_from_slice(&pkg2);
+    body2.extend_from_slice(b"\r\n--");
+    body2.extend_from_slice(boundary.as_bytes());
+    body2.extend_from_slice(b"\r\n");
+    body2.extend_from_slice(b"Content-Disposition: form-data; name=\"repo\"\r\n\r\n");
+    body2.extend_from_slice(b"testing");
+    body2.extend_from_slice(b"\r\n--");
+    body2.extend_from_slice(boundary.as_bytes());
+    body2.extend_from_slice(b"--\r\n");
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages")
+                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .body(Body::from(body2))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Filter by repo=testing
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/packages?repo=testing")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let packages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    // Should only return pkg2 from testing repo
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0]["name"].as_str().unwrap(), "pkg2");
+    assert_eq!(packages[0]["repo"].as_str().unwrap(), "testing");
+}
+
+#[tokio::test]
+async fn test_list_packages_filter_by_arch() {
+    let app = setup_test_app().await;
+
+    // Upload packages with different architectures
+    let pkg1 = create_test_package("pkg1", "1.0.0", "x86_64");
+    let pkg2 = create_test_package("pkg2", "2.0.0", "aarch64");
+
+    let boundary = "------------------------boundary123456789";
+
+    for (pkg_data, name, arch) in [(pkg1, "pkg1", "x86_64"), (pkg2, "pkg2", "aarch64")] {
+        let mut body = Vec::new();
+        body.extend_from_slice(b"--");
+        body.extend_from_slice(boundary.as_bytes());
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(format!(r#"Content-Disposition: form-data; name="file"; filename="{}-1.0.0-{}.pkg.tar.zst""#, name, arch).as_bytes());
+        body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+        body.extend_from_slice(&pkg_data);
+        body.extend_from_slice(b"\r\n--");
+        body.extend_from_slice(boundary.as_bytes());
+        body.extend_from_slice(b"--\r\n");
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/packages")
+                    .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // Filter by arch=aarch64
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/packages?arch=aarch64")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let packages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    // Should only return pkg2 with aarch64 arch
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0]["name"].as_str().unwrap(), "pkg2");
+    assert_eq!(packages[0]["arch"].as_str().unwrap(), "aarch64");
+}
+
+#[tokio::test]
 async fn test_upload_streaming_size_exceeds_limit() {
     let app = setup_test_app().await;
 

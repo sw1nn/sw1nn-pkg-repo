@@ -200,18 +200,36 @@ pub async fn list_packages(
     State(state): State<Arc<AppState>>,
     Query(query): Query<PackageQuery>,
 ) -> Result<Json<Vec<Package>>> {
-    let repo = query
-        .repo
-        .unwrap_or_else(|| state.config.storage.default_repo.clone());
-    let arch = query
-        .arch
-        .unwrap_or_else(|| state.config.storage.default_arch.clone());
+    // If both repo and arch are not specified, list all packages
+    // Otherwise use specified repo/arch or defaults
+    let mut packages = if query.repo.is_none() && query.arch.is_none() {
+        state.storage.list_all_packages().await?
+    } else {
+        let repo = query
+            .repo
+            .as_ref()
+            .map(String::as_str)
+            .unwrap_or(&state.config.storage.default_repo);
+        let arch = query
+            .arch
+            .as_ref()
+            .map(String::as_str)
+            .unwrap_or(&state.config.storage.default_arch);
 
-    let mut packages = state.storage.list_packages(&repo, &arch).await?;
+        state.storage.list_packages(repo, arch).await?
+    };
 
-    // Filter by name if provided
-    if let Some(name) = query.name {
-        packages.retain(|p| p.name.contains(&name));
+    // Apply filters
+    if let Some(ref name_filter) = query.name {
+        packages.retain(|p| p.name.contains(name_filter));
+    }
+
+    if let Some(ref repo_filter) = query.repo {
+        packages.retain(|p| &p.repo == repo_filter);
+    }
+
+    if let Some(ref arch_filter) = query.arch {
+        packages.retain(|p| &p.arch == arch_filter);
     }
 
     Ok(Json(packages))

@@ -226,6 +226,58 @@ impl Storage {
         Ok(packages)
     }
 
+    /// List all packages across all repos and architectures
+    pub async fn list_all_packages(&self) -> Result<Vec<Package>> {
+        let mut all_packages = Vec::new();
+
+        // Check if base path exists
+        if !self.base_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        // Iterate through all repos
+        let mut repo_entries = fs::read_dir(&self.base_path).await?;
+        while let Some(repo_entry) = repo_entries.next_entry().await? {
+            if !repo_entry.path().is_dir() {
+                continue;
+            }
+
+            let os_dir = repo_entry.path().join("os");
+
+            if !os_dir.exists() {
+                continue;
+            }
+
+            // Iterate through all architectures
+            let mut arch_entries = fs::read_dir(&os_dir).await?;
+            while let Some(arch_entry) = arch_entries.next_entry().await? {
+                if !arch_entry.path().is_dir() {
+                    continue;
+                }
+
+                let meta_dir = arch_entry.path().join("metadata");
+
+                if !meta_dir.exists() {
+                    continue;
+                }
+
+                // Read all packages in this repo/arch
+                let mut meta_entries = fs::read_dir(&meta_dir).await?;
+                while let Some(meta_entry) = meta_entries.next_entry().await? {
+                    let path = meta_entry.path();
+                    if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                        let content = fs::read_to_string(&path).await?;
+                        if let Ok(package) = serde_json::from_str::<Package>(&content) {
+                            all_packages.push(package);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_packages)
+    }
+
     /// Delete a package and its metadata
     pub async fn delete_package(&self, package: &Package) -> Result<()> {
         let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
