@@ -1,6 +1,20 @@
 # Changelog
 
 - - -
+## v0.8.0 - 2025-11-08
+#### Features
+- list all packages when no query parameters provided - (f2a642c) - Neale Swinnerton
+- normalize data_path to absolute path on config load - (bd0ab22) - Neale Swinnerton
+- align colored output field values - (b21e805) - Neale Swinnerton
+- add colored, structured output to upload client - (8f5322a) - Neale Swinnerton
+#### Bug Fixes
+- correct path normalization to preserve absolute paths - (52da4da) - Neale Swinnerton
+#### Miscellaneous Chores
+- add changelog separator for cocogitto - (be916d1) - Neale Swinnerton
+- migrate to cocogitto and standardize PKGBUILD - (c7f8898) - Neale Swinnerton
+
+- - -
+
 
 ## [Unreleased]
 
