@@ -22,4 +22,5 @@ post_bump_hooks = [
   "git push",
   "git push origin v{{version}}",
   "cd packaging/arch && makepkg --sign",
+  "cd packaging/arch && sw1nn-pkg-upload sw1nn-pkg-repo-{{version}}-*-*.pkg.tar.zst",
 ]
