@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v0.11.0 - 2025-11-08
+#### Miscellaneous Chores
+- (**cog**) tweak post_bump_hooks - (825cf4e) - Neale Swinnerton
+
+- - -
+
 ## v0.10.0 - 2025-11-08
 #### Features
 - support multiple file uploads in CLI - (78ad573) - Neale Swinnerton
