@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v0.10.0 - 2025-11-08
+#### Features
+- support multiple file uploads in CLI - (78ad573) - Neale Swinnerton
+#### Miscellaneous Chores
+- ignore package signature files - (76c3f90) - Neale Swinnerton
+
+- - -
+
 ## v0.9.0 - 2025-11-08
 #### Miscellaneous Chores
 - build the arch package after a release - (86b2239) - Neale Swinnerton
