@@ -173,13 +173,15 @@ async fn upload_chunked(
 
     // Initiate upload
     tracing::info!("[{}/{}] Initiating chunked upload...", index, total);
+    // Cap chunk size to file size to avoid server validation errors
+    let chunk_size = std::cmp::min(DEFAULT_CHUNK_SIZE, file_size as usize);
     let init_req = InitiateUploadRequest {
         filename: filename.clone(),
         size: file_size,
         sha256: Some(sha256),
         repo: None,
         arch: None,
-        chunk_size: Some(DEFAULT_CHUNK_SIZE),
+        chunk_size: Some(chunk_size),
         has_signature,
     };
 
