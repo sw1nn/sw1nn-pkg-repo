@@ -5,6 +5,7 @@ pub mod metadata;
 pub mod models;
 pub mod repo;
 pub mod storage;
+pub mod upload;
 
 use api::{AppState, create_api_router};
 use axum::{Router, routing::get};
@@ -47,10 +48,14 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Create storage
     let storage = Storage::new(&config.storage.data_path);
 
+    // Create upload session store
+    let upload_store = upload::UploadSessionStore::new(config.storage.data_path.clone());
+
     // Create shared state
     let state = Arc::new(AppState {
         storage,
         config: config.clone(),
+        upload_store,
     });
 
     // Build API routes using utoipa_axum router

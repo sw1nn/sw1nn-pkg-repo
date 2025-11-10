@@ -1,184 +1,26 @@
+mod upload;
+
 use crate::config::Config;
 use crate::error::{Error, Result};
-use crate::metadata::{calculate_sha256, extract_pkginfo, generate_files_db, generate_repo_db};
+use crate::metadata::{extract_pkginfo, generate_files_db, generate_repo_db};
 use crate::models::{Package, PackageQuery};
 use crate::storage::Storage;
+use crate::upload::UploadSessionStore;
 use axum::{
     Json,
-    extract::{Multipart, Path as AxumPath, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Path as AxumPath, Query, State},
+    http::StatusCode,
     response::IntoResponse,
 };
-use chrono::Utc;
 use std::sync::Arc;
 use utoipa::OpenApi;
-use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 pub struct AppState {
     pub storage: Storage,
     pub config: Config,
-}
-
-/// Request body for package upload
-#[derive(ToSchema)]
-pub struct PackageUploadRequest {
-    /// Package file (.pkg.tar.zst)
-    #[schema(format = "binary")]
-    pub file: String,
-    /// Repository name (optional, defaults to 'sw1nn')
-    #[schema(example = "sw1nn")]
-    pub repo: Option<String>,
-    /// Architecture (optional, defaults to 'x86_64')
-    #[schema(example = "x86_64")]
-    pub arch: Option<String>,
-}
-
-/// Upload a package file to the repository
-#[utoipa::path(
-    post,
-    path = "/packages",
-    request_body(content = PackageUploadRequest, content_type = "multipart/form-data"),
-    responses(
-        (status = 201, description = "Package uploaded successfully", body = Package),
-        (status = 400, description = "Invalid package file"),
-        (status = 409, description = "Package already exists"),
-        (status = 413, description = "Payload too large"),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "packages"
-)]
-pub async fn upload_package(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    mut multipart: Multipart,
-) -> Result<impl IntoResponse> {
-    // Check Content-Length header before processing multipart data
-    if let Some(content_length) = headers.get("content-length") {
-        if let Ok(content_length_str) = content_length.to_str() {
-            if let Ok(content_length_bytes) = content_length_str.parse::<u64>() {
-                let max_size = state.config.server.max_payload_size.as_u64();
-                if content_length_bytes > max_size {
-                    return Err(Error::PayloadTooLarge {
-                        msg: format!(
-                            "Request size {} exceeds maximum allowed size of {}",
-                            byte_unit::Byte::from_u64(content_length_bytes),
-                            state.config.server.max_payload_size
-                        ),
-                    });
-                }
-            }
-        }
-    }
-
-    let mut package_data: Option<Vec<u8>> = None;
-    let mut repo = state.config.storage.default_repo.clone();
-    let mut arch = state.config.storage.default_arch.clone();
-
-    // Parse multipart form
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| Error::InvalidPackage {
-            pkgname: format!("Failed to read multipart field: {}", e),
-        })?
-    {
-        match field.name().unwrap_or("") {
-            "file" => {
-                // Validate filename has .pkg.tar.zst extension
-                if let Some(filename) = field.file_name() {
-                    if !filename.ends_with(".pkg.tar.zst") {
-                        return Err(Error::InvalidPackage {
-                            pkgname: format!(
-                                "Invalid file extension: '{}'. Only .pkg.tar.zst packages are allowed",
-                                filename
-                            ),
-                        });
-                    }
-                }
-
-                // Stream with size limit enforcement to prevent bypass of Content-Length check
-                let max_size = state.config.server.max_payload_size.as_u64() as usize;
-                let mut accumulated = Vec::new();
-
-                // Read field in chunks, enforcing size limit
-                while let Some(chunk) = field
-                    .chunk()
-                    .await
-                    .map_err(|e| Error::InvalidPackage {
-                        pkgname: format!("Failed to read chunk: {}", e),
-                    })?
-                {
-                    // Check size before accumulating
-                    if accumulated.len() + chunk.len() > max_size {
-                        return Err(Error::PayloadTooLarge {
-                            msg: format!(
-                                "Payload exceeds maximum allowed size of {}",
-                                state.config.server.max_payload_size
-                            ),
-                        });
-                    }
-                    accumulated.extend_from_slice(&chunk);
-                }
-
-                package_data = Some(accumulated);
-            }
-            "repo" => {
-                repo = field.text().await.unwrap_or(repo);
-            }
-            "arch" => {
-                arch = field.text().await.unwrap_or(arch);
-            }
-            _ => {}
-        }
-    }
-
-    let package_data = package_data.ok_or_else(|| Error::InvalidPackage {
-        pkgname: "No package file provided".to_string(),
-    })?;
-
-    // Extract .PKGINFO and calculate checksums in blocking task
-    // These operations do CPU-intensive compression/decompression
-    let package_data_clone = package_data.clone();
-    let (pkginfo, sha256) = tokio::task::spawn_blocking(move || {
-        let pkginfo = extract_pkginfo(&package_data_clone)?;
-        let sha256 = calculate_sha256(&package_data_clone);
-        Ok::<_, Error>((pkginfo, sha256))
-    })
-    .await
-    .map_err(|e| Error::Io(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        format!("Task join error: {}", e),
-    )))??;
-
-    let size = package_data.len() as u64;
-
-    // Create filename
-    let filename = format!(
-        "{}-{}-{}.pkg.tar.zst",
-        pkginfo.pkgname, pkginfo.pkgver, pkginfo.arch
-    );
-
-    // Create package record - move values to avoid clones
-    let package = Package {
-        name: pkginfo.pkgname,
-        version: pkginfo.pkgver,
-        arch: pkginfo.arch,
-        repo,
-        filename,
-        sha256,
-        size,
-        created_at: Utc::now(),
-    };
-
-    // Store package (atomic operation - will fail if package already exists)
-    state.storage.store_package(&package, &package_data).await?;
-
-    // Regenerate repository database
-    regenerate_repo_db(&state.storage, &package.repo, &package.arch).await?;
-
-    Ok((StatusCode::CREATED, Json(package)))
+    pub upload_store: UploadSessionStore,
 }
 
 /// List packages with optional filtering
@@ -276,7 +118,7 @@ pub async fn delete_package(
 }
 
 /// Regenerate repository database for a given repo/arch
-async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result<()> {
+pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result<()> {
     let packages = storage.list_packages(repo, arch).await?;
 
     let repo_dir = storage.repo_dir(repo, arch)?;
@@ -290,10 +132,12 @@ async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result
         // Extract pkginfo in blocking task (CPU-intensive decompression)
         let pkginfo = tokio::task::spawn_blocking(move || extract_pkginfo(&data))
             .await
-            .map_err(|e| Error::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Task join error: {}", e),
-            )))??;
+            .map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Task join error: {}", e),
+                ))
+            })??;
 
         pkg_data.push((pkg, pkginfo));
     }
@@ -308,10 +152,21 @@ async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result
 #[derive(OpenApi)]
 #[openapi(
     components(
-        schemas(Package, PackageQuery, PackageUploadRequest)
+        schemas(
+            Package,
+            PackageQuery,
+            upload::InitiateUploadRequest,
+            upload::InitiateUploadResponse,
+            upload::UploadChunkResponse,
+            upload::UploadSignatureResponse,
+            upload::CompleteUploadRequest,
+            upload::ChunkInfo,
+            upload::AbortUploadResponse
+        )
     ),
     tags(
-        (name = "packages", description = "Package management endpoints")
+        (name = "packages", description = "Package management endpoints"),
+        (name = "chunked-uploads", description = "Chunked upload endpoints")
     )
 )]
 pub struct ApiDoc;
@@ -319,8 +174,12 @@ pub struct ApiDoc;
 /// Create the API router with all routes
 pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .routes(routes!(upload_package))
         .routes(routes!(list_packages))
         .routes(routes!(delete_package))
+        .routes(routes!(upload::initiate_upload))
+        .routes(routes!(upload::upload_chunk))
+        .routes(routes!(upload::upload_signature))
+        .routes(routes!(upload::complete_upload))
+        .routes(routes!(upload::abort_upload))
         .with_state(state)
 }

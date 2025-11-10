@@ -5,6 +5,7 @@ use sw1nn_pkg_repo::api::{AppState, create_api_router};
 use sw1nn_pkg_repo::config::Config;
 use sw1nn_pkg_repo::repo::serve_file;
 use sw1nn_pkg_repo::storage::Storage;
+use sw1nn_pkg_repo::upload::UploadSessionStore;
 use tar::{Builder, Header};
 use tempfile::TempDir;
 use tower_http::cors::CorsLayer;
@@ -21,12 +22,15 @@ pub async fn setup_test_app() -> Router {
     std::mem::forget(temp_dir);
 
     let mut config = Config::default();
-    config.storage.data_path = temp_path;
+    config.storage.data_path = temp_path.clone();
 
     let storage = Storage::new(&config.storage.data_path);
+    let upload_store = UploadSessionStore::new(temp_path);
+
     let state = Arc::new(AppState {
         storage,
         config: config.clone(),
+        upload_store,
     });
 
     // Build API routes

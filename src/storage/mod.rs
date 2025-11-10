@@ -37,12 +37,12 @@ fn validate_path_component(component: &str) -> Result<()> {
 /// Validate that a constructed path is within the base directory
 fn validate_path_within_base(base: &Path, path: &Path) -> Result<()> {
     // Canonicalize both paths to resolve symlinks and relative components
-    let canonical_base = base
-        .canonicalize()
-        .map_err(|e| Error::Io(std::io::Error::new(
+    let canonical_base = base.canonicalize().map_err(|e| {
+        Error::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("Base path does not exist: {}", e),
-        )))?;
+        ))
+    })?;
 
     // For the constructed path, we need to check if it would be within base
     // even if it doesn't exist yet. We check the parent if the path doesn't exist.
@@ -50,12 +50,11 @@ fn validate_path_within_base(base: &Path, path: &Path) -> Result<()> {
         path.canonicalize()?
     } else if let Some(parent) = path.parent() {
         if parent.exists() {
-            parent.canonicalize()?.join(
-                path.file_name()
-                    .ok_or_else(|| Error::InvalidPackage {
-                        pkgname: "Invalid path structure".to_string(),
-                    })?,
-            )
+            parent
+                .canonicalize()?
+                .join(path.file_name().ok_or_else(|| Error::InvalidPackage {
+                    pkgname: "Invalid path structure".to_string(),
+                })?)
         } else {
             // Parent doesn't exist yet, just verify the logical structure
             return Ok(());
@@ -95,7 +94,8 @@ impl Storage {
         validate_path_component(arch)?;
         validate_path_component(filename)?;
 
-        let path = self.base_path
+        let path = self
+            .base_path
             .join(repo)
             .join("os")
             .join(arch)
@@ -112,7 +112,8 @@ impl Storage {
         validate_path_component(arch)?;
         validate_path_component(package_name)?;
 
-        let path = self.base_path
+        let path = self
+            .base_path
             .join(repo)
             .join("os")
             .join(arch)
@@ -171,6 +172,45 @@ impl Storage {
 
         file.write_all(data).await?;
         file.sync_all().await?;
+
+        // Write metadata
+        let metadata_json = serde_json::to_string_pretty(package)
+            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        fs::write(&meta_path, metadata_json).await?;
+
+        Ok(())
+    }
+
+    /// Store a package file from a source path (avoids loading into memory)
+    ///
+    /// Uses atomic file creation to prevent TOCTOU race conditions.
+    /// If the package already exists, returns PackageAlreadyExists error.
+    pub async fn store_package_from_path(
+        &self,
+        package: &Package,
+        source_path: &std::path::Path,
+    ) -> Result<()> {
+        let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
+        let meta_path = self.metadata_path(&package.repo, &package.arch, &package.name)?;
+
+        // Create directories
+        if let Some(parent) = pkg_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        if let Some(parent) = meta_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
+        // Check if destination already exists (to return proper error)
+        if pkg_path.exists() {
+            return Err(Error::PackageAlreadyExists {
+                pkgname: package.filename.clone(),
+            });
+        }
+
+        // Copy file to destination
+        // Using copy instead of rename to work across filesystems
+        tokio::fs::copy(source_path, &pkg_path).await?;
 
         // Write metadata
         let metadata_json = serde_json::to_string_pretty(package)
