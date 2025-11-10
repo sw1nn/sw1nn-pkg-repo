@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v1.1.0 - 2025-11-10
+#### Miscellaneous Chores
+- (**version**) v1.0.2 - (e2ce8cb) - Neale Swinnerton
+
+- - -
+
 ## v1.0.2 - 2025-11-10
 #### Bug Fixes
 - make sure that cog releases upload all the packages - (830eacb) - Neale Swinnerton
