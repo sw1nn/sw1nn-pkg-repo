@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v1.0.2 - 2025-11-10
+#### Bug Fixes
+- make sure that cog releases upload all the packages - (830eacb) - Neale Swinnerton
+
+- - -
+
 ## v1.0.1 - 2025-11-10
 #### Bug Fixes
 - (**upload**) cap chunk size to file size for small packages - (025acd2) - Neale Swinnerton
