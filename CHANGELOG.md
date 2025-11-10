@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v1.0.1 - 2025-11-10
+#### Bug Fixes
+- (**upload**) cap chunk size to file size for small packages - (025acd2) - Neale Swinnerton
+
+- - -
+
 ## v1.0.0 - 2025-11-10
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>implement chunked upload with streaming assembly and remove legacy API - (16e8d52) - Neale Swinnerton
