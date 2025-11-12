@@ -143,15 +143,7 @@ pub async fn generate_repo_db(
 
     // Create tar.gz archive in blocking task (CPU-intensive compression)
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::create(&db_path_clone).map_err(|error| match error.kind() {
-            std::io::ErrorKind::PermissionDenied => Error::PermissionDenied {
-                path: db_path_clone.display().to_string(),
-            },
-            _ => Error::Io {
-                error,
-                path: db_path_clone.display().to_string(),
-            },
-        })?;
+        let file = std::fs::File::create(&db_path_clone).map_io_err(&db_path_clone)?;
         let encoder = GzEncoder::new(file, Compression::default());
         let mut tar = Builder::new(encoder);
 
@@ -226,15 +218,7 @@ pub async fn generate_files_db(
 
     // Create tar.gz archive in blocking task (CPU-intensive compression)
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::create(&files_path_clone).map_err(|error| match error.kind() {
-            std::io::ErrorKind::PermissionDenied => Error::PermissionDenied {
-                path: files_path_clone.display().to_string(),
-            },
-            _ => Error::Io {
-                error,
-                path: files_path_clone.display().to_string(),
-            },
-        })?;
+        let file = std::fs::File::create(&files_path_clone).map_io_err(&files_path_clone)?;
         let encoder = GzEncoder::new(file, Compression::default());
         let mut tar = Builder::new(encoder);
 

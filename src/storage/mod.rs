@@ -37,12 +37,7 @@ fn validate_path_component(component: &str) -> Result<()> {
 /// Validate that a constructed path is within the base directory
 fn validate_path_within_base(base: &Path, path: &Path) -> Result<()> {
     // Canonicalize both paths to resolve symlinks and relative components
-    let canonical_base = base.canonicalize().map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Base path does not exist: {}", e),
-        )
-    })?;
+    let canonical_base = base.canonicalize().map_io_err(base)?;
 
     // For the constructed path, we need to check if it would be within base
     // even if it doesn't exist yet. We check the parent if the path doesn't exist.
