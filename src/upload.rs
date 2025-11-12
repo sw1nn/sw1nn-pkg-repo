@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, ResultIoExt};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -102,17 +102,19 @@ impl UploadSessionStore {
 
         // Create upload directory
         let upload_dir = self.upload_dir(&upload_id)?;
-        fs::create_dir_all(&upload_dir).await?;
+        fs::create_dir_all(&upload_dir).await.map_io_err(&upload_dir)?;
 
         // Create chunks subdirectory
         let chunks_dir = upload_dir.join("chunks");
-        fs::create_dir_all(&chunks_dir).await?;
+        fs::create_dir_all(&chunks_dir).await.map_io_err(&chunks_dir)?;
 
         // Save session metadata
         let metadata_path = upload_dir.join("metadata.json");
         let metadata_json = serde_json::to_string_pretty(&session)
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-        fs::write(&metadata_path, metadata_json).await?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fs::write(&metadata_path, metadata_json)
+            .await
+            .map_io_err(&metadata_path)?;
 
         // Store in memory
         let mut sessions = self.sessions.write().await;
@@ -140,8 +142,10 @@ impl UploadSessionStore {
         let upload_dir = self.upload_dir(&upload_id)?;
         let metadata_path = upload_dir.join("metadata.json");
         let metadata_json = serde_json::to_string_pretty(&session)
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-        fs::write(&metadata_path, metadata_json).await?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fs::write(&metadata_path, metadata_json)
+            .await
+            .map_io_err(&metadata_path)?;
 
         // Update in memory
         let mut sessions = self.sessions.write().await;
@@ -171,7 +175,9 @@ impl UploadSessionStore {
             }
 
             // Delete entire upload directory
-            fs::remove_dir_all(&upload_dir).await?;
+            fs::remove_dir_all(&upload_dir)
+                .await
+                .map_io_err(&upload_dir)?;
         }
 
         // Remove from memory
@@ -260,9 +266,9 @@ impl UploadSessionStore {
 
         // Write chunk to disk
         let chunk_path = self.chunk_path(upload_id, chunk_number)?;
-        let mut file = fs::File::create(&chunk_path).await?;
-        file.write_all(data).await?;
-        file.sync_all().await?;
+        let mut file = fs::File::create(&chunk_path).await.map_io_err(&chunk_path)?;
+        file.write_all(data).await.map_io_err(&chunk_path)?;
+        file.sync_all().await.map_io_err(&chunk_path)?;
 
         // Calculate checksum
         let checksum = format!("{:x}", md5::compute(data));
@@ -277,9 +283,9 @@ impl UploadSessionStore {
     /// Store signature file
     pub async fn store_signature(&self, upload_id: &str, data: &[u8]) -> Result<String> {
         let sig_path = self.signature_path(upload_id)?;
-        let mut file = fs::File::create(&sig_path).await?;
-        file.write_all(data).await?;
-        file.sync_all().await?;
+        let mut file = fs::File::create(&sig_path).await.map_io_err(&sig_path)?;
+        file.write_all(data).await.map_io_err(&sig_path)?;
+        file.sync_all().await.map_io_err(&sig_path)?;
 
         // Calculate checksum
         let checksum = format!("{:x}", sha2::Sha256::digest(data));
@@ -306,7 +312,9 @@ impl UploadSessionStore {
         let assembled_path = upload_dir.join("assembled.pkg.tar.zst");
 
         // Open output file
-        let mut output_file = fs::File::create(&assembled_path).await?;
+        let mut output_file = fs::File::create(&assembled_path)
+            .await
+            .map_io_err(&assembled_path)?;
         let mut total_size = 0u64;
         let mut hasher = sha2::Sha256::new();
 
@@ -319,12 +327,15 @@ impl UploadSessionStore {
             hasher.update(&chunk_data);
 
             // Write to output
-            output_file.write_all(&chunk_data).await?;
+            output_file
+                .write_all(&chunk_data)
+                .await
+                .map_io_err(&assembled_path)?;
             total_size += chunk_data.len() as u64;
         }
 
         // Ensure all data is written
-        output_file.sync_all().await?;
+        output_file.sync_all().await.map_io_err(&assembled_path)?;
         drop(output_file);
 
         // Verify size

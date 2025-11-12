@@ -1,5 +1,5 @@
 use crate::api::{AppState, regenerate_repo_db};
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, ResultIoExt};
 use crate::metadata::{calculate_sha256, extract_pkginfo};
 use crate::models::Package;
 use crate::upload::{DEFAULT_CHUNK_SIZE, DEFAULT_SESSION_EXPIRATION_SECS, UploadSession};
@@ -340,10 +340,7 @@ pub async fn complete_upload(
     })
     .await
     .map_err(|e| {
-        Error::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Task join error: {}", e),
-        ))
+        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
     })??;
 
     // Create filename
@@ -379,7 +376,9 @@ pub async fn complete_upload(
                     .storage
                     .package_path(&package.repo, &package.arch, &sig_filename)?;
 
-            tokio::fs::write(&sig_path, &sig_data).await?;
+            tokio::fs::write(&sig_path, &sig_data)
+                .await
+                .map_io_err(&sig_path)?;
         } else {
             tracing::warn!(
                 "Session indicated signature but none found for upload {}",

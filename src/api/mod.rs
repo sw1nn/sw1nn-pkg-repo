@@ -1,7 +1,7 @@
 mod upload;
 
 use crate::config::Config;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::metadata::{extract_pkginfo, generate_files_db, generate_repo_db};
 use crate::models::{Package, PackageQuery};
 use crate::storage::Storage;
@@ -133,10 +133,7 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
         let pkginfo = tokio::task::spawn_blocking(move || extract_pkginfo(&data))
             .await
             .map_err(|e| {
-                Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Task join error: {}", e),
-                ))
+                std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
             })??;
 
         pkg_data.push((pkg, pkginfo));

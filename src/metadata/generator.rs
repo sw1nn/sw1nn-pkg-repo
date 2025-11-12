@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result, ResultIoExt};
 use crate::models::{Package, PkgInfo};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -143,7 +143,15 @@ pub async fn generate_repo_db(
 
     // Create tar.gz archive in blocking task (CPU-intensive compression)
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::create(&db_path_clone)?;
+        let file = std::fs::File::create(&db_path_clone).map_err(|error| match error.kind() {
+            std::io::ErrorKind::PermissionDenied => Error::PermissionDenied {
+                path: db_path_clone.display().to_string(),
+            },
+            _ => Error::Io {
+                error,
+                path: db_path_clone.display().to_string(),
+            },
+        })?;
         let encoder = GzEncoder::new(file, Compression::default());
         let mut tar = Builder::new(encoder);
 
@@ -165,39 +173,40 @@ pub async fn generate_repo_db(
         Ok::<_, crate::error::Error>(())
     })
     .await
-    .map_err(|e| crate::error::Error::Io(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        format!("Task join error: {}", e),
-    )))??;
+    .map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
+    })??;
 
     // Create symlink
     if db_link.exists() {
-        fs::remove_file(&db_link).await?;
+        fs::remove_file(&db_link).await.map_io_err(&db_link)?;
     }
 
     let repo_name = repo_name.to_string();
     let db_link_clone = db_link.clone();
+    #[cfg(not(unix))]
+    let db_path_for_copy = db_path.clone();
 
     // Symlink creation in blocking task
     tokio::task::spawn_blocking(move || {
         #[cfg(unix)]
         {
             use std::os::unix::fs::symlink;
-            symlink(format!("{}.db.tar.gz", repo_name), &db_link_clone)?;
+            symlink(format!("{}.db.tar.gz", repo_name), &db_link_clone)
+                .map_io_err(&db_link_clone)?;
         }
 
         #[cfg(not(unix))]
         {
             // On non-Unix systems, just copy the file
-            std::fs::copy(&db_path, &db_link_clone)?;
+            std::fs::copy(&db_path_for_copy, &db_link_clone).map_io_err(&db_link_clone)?;
         }
-        Ok::<_, std::io::Error>(())
+        Ok::<_, Error>(())
     })
     .await
-    .map_err(|e| std::io::Error::new(
-        std::io::ErrorKind::Other,
-        format!("Task join error: {}", e),
-    ))??;
+    .map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
+    })??;
 
     Ok(())
 }
@@ -217,7 +226,15 @@ pub async fn generate_files_db(
 
     // Create tar.gz archive in blocking task (CPU-intensive compression)
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::create(&files_path_clone)?;
+        let file = std::fs::File::create(&files_path_clone).map_err(|error| match error.kind() {
+            std::io::ErrorKind::PermissionDenied => Error::PermissionDenied {
+                path: files_path_clone.display().to_string(),
+            },
+            _ => Error::Io {
+                error,
+                path: files_path_clone.display().to_string(),
+            },
+        })?;
         let encoder = GzEncoder::new(file, Compression::default());
         let mut tar = Builder::new(encoder);
 
@@ -246,39 +263,41 @@ pub async fn generate_files_db(
         Ok::<_, crate::error::Error>(())
     })
     .await
-    .map_err(|e| crate::error::Error::Io(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        format!("Task join error: {}", e),
-    )))??;
+    .map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
+    })??;
 
     // Create symlink
     if files_link.exists() {
-        fs::remove_file(&files_link).await?;
+        fs::remove_file(&files_link).await.map_io_err(&files_link)?;
     }
 
     let repo_name = repo_name.to_string();
     let files_link_clone = files_link.clone();
+    #[cfg(not(unix))]
+    let files_path_for_copy = files_path.clone();
 
     // Symlink creation in blocking task
     tokio::task::spawn_blocking(move || {
         #[cfg(unix)]
         {
             use std::os::unix::fs::symlink;
-            symlink(format!("{}.files.tar.gz", repo_name), &files_link_clone)?;
+            symlink(format!("{}.files.tar.gz", repo_name), &files_link_clone)
+                .map_io_err(&files_link_clone)?;
         }
 
         #[cfg(not(unix))]
         {
             // On non-Unix systems, just copy the file
-            std::fs::copy(&files_path, &files_link_clone)?;
+            std::fs::copy(&files_path_for_copy, &files_link_clone)
+                .map_io_err(&files_link_clone)?;
         }
-        Ok::<_, std::io::Error>(())
+        Ok::<_, Error>(())
     })
     .await
-    .map_err(|e| std::io::Error::new(
-        std::io::ErrorKind::Other,
-        format!("Task join error: {}", e),
-    ))??;
+    .map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
+    })??;
 
     Ok(())
 }

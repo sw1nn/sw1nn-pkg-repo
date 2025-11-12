@@ -1,11 +1,14 @@
-use derive_more::{Display, From};
+use derive_more::Display;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Display, From)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[from]
-    Io(std::io::Error),
+    #[display("IO error at {path}: {error}")]
+    Io {
+        error: std::io::Error,
+        path: String,
+    },
 
     #[display("Package not found: {pkgname}")]
     PackageNotFound { pkgname: String },
@@ -24,9 +27,22 @@ pub enum Error {
 
     #[display("Configuration error: {msg}")]
     Config { msg: String },
+
+    #[display("Permission denied: {path}")]
+    PermissionDenied { path: String },
 }
 
 impl std::error::Error for Error {}
+
+// Implement From<std::io::Error> for cases where path context is not available
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Error::Io {
+            error,
+            path: "<unknown>".to_string(),
+        }
+    }
+}
 
 // Implement axum IntoResponse for Error
 impl axum::response::IntoResponse for Error {
@@ -66,9 +82,9 @@ impl axum::response::IntoResponse for Error {
                 // Safe to expose - contains size limits we configured
                 (axum::http::StatusCode::PAYLOAD_TOO_LARGE, msg.clone())
             }
-            Error::Io(e) => {
-                // Log full error internally for debugging
-                tracing::error!("IO error: {}", e);
+            Error::Io { error, path } => {
+                // Log full error with path internally for debugging
+                tracing::error!("IO error at path {}: {}", path, error);
                 // Return generic message - never expose file paths
                 (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -93,6 +109,15 @@ impl axum::response::IntoResponse for Error {
                     "Configuration error".to_string(),
                 )
             }
+            Error::PermissionDenied { path } => {
+                // Log full error with path internally for debugging
+                tracing::error!("Permission denied writing to path: {}", path);
+                // Return generic message - don't expose file paths to client
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            }
         };
 
         let body = axum::Json(serde_json::json!({
@@ -100,5 +125,25 @@ impl axum::response::IntoResponse for Error {
         }));
 
         (status, body).into_response()
+    }
+}
+
+/// Extension trait for converting I/O errors to custom errors with path context
+pub trait ResultIoExt<T> {
+    /// Map I/O errors with path context, creating PermissionDenied variant when appropriate
+    fn map_io_err(self, path: &std::path::Path) -> Result<T>;
+}
+
+impl<T> ResultIoExt<T> for std::result::Result<T, std::io::Error> {
+    fn map_io_err(self, path: &std::path::Path) -> Result<T> {
+        self.map_err(|error| match error.kind() {
+            std::io::ErrorKind::PermissionDenied => Error::PermissionDenied {
+                path: path.display().to_string(),
+            },
+            _ => Error::Io {
+                error,
+                path: path.display().to_string(),
+            },
+        })
     }
 }

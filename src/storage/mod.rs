@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, ResultIoExt};
 use crate::models::Package;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -38,10 +38,10 @@ fn validate_path_component(component: &str) -> Result<()> {
 fn validate_path_within_base(base: &Path, path: &Path) -> Result<()> {
     // Canonicalize both paths to resolve symlinks and relative components
     let canonical_base = base.canonicalize().map_err(|e| {
-        Error::Io(std::io::Error::new(
+        std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("Base path does not exist: {}", e),
-        ))
+        )
     })?;
 
     // For the constructed path, we need to check if it would be within base
@@ -147,10 +147,10 @@ impl Storage {
 
         // Create directories
         if let Some(parent) = pkg_path.parent() {
-            fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await.map_io_err(parent)?;
         }
         if let Some(parent) = meta_path.parent() {
-            fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await.map_io_err(parent)?;
         }
 
         // Atomic write with exclusive creation flag (prevents TOCTOU races)
@@ -165,18 +165,27 @@ impl Storage {
                     Error::PackageAlreadyExists {
                         pkgname: package.filename.clone(),
                     }
+                } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    Error::PermissionDenied {
+                        path: pkg_path.display().to_string(),
+                    }
                 } else {
-                    Error::Io(e)
+                    Error::Io {
+                        error: e,
+                        path: pkg_path.display().to_string(),
+                    }
                 }
             })?;
 
-        file.write_all(data).await?;
-        file.sync_all().await?;
+        file.write_all(data).await.map_io_err(&pkg_path)?;
+        file.sync_all().await.map_io_err(&pkg_path)?;
 
         // Write metadata
         let metadata_json = serde_json::to_string_pretty(package)
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-        fs::write(&meta_path, metadata_json).await?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fs::write(&meta_path, metadata_json)
+            .await
+            .map_io_err(&meta_path)?;
 
         Ok(())
     }
@@ -195,10 +204,10 @@ impl Storage {
 
         // Create directories
         if let Some(parent) = pkg_path.parent() {
-            fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await.map_io_err(parent)?;
         }
         if let Some(parent) = meta_path.parent() {
-            fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await.map_io_err(parent)?;
         }
 
         // Check if destination already exists (to return proper error)
@@ -210,12 +219,16 @@ impl Storage {
 
         // Copy file to destination
         // Using copy instead of rename to work across filesystems
-        tokio::fs::copy(source_path, &pkg_path).await?;
+        tokio::fs::copy(source_path, &pkg_path)
+            .await
+            .map_io_err(&pkg_path)?;
 
         // Write metadata
         let metadata_json = serde_json::to_string_pretty(package)
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-        fs::write(&meta_path, metadata_json).await?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fs::write(&meta_path, metadata_json)
+            .await
+            .map_io_err(&meta_path)?;
 
         Ok(())
     }
@@ -237,7 +250,7 @@ impl Storage {
 
         let content = fs::read_to_string(&meta_path).await?;
         let package: Package = serde_json::from_str(&content)
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         Ok(package)
     }
@@ -325,12 +338,12 @@ impl Storage {
 
         // Delete package file
         if pkg_path.exists() {
-            fs::remove_file(&pkg_path).await?;
+            fs::remove_file(&pkg_path).await.map_io_err(&pkg_path)?;
         }
 
         // Delete metadata
         if meta_path.exists() {
-            fs::remove_file(&meta_path).await?;
+            fs::remove_file(&meta_path).await.map_io_err(&meta_path)?;
         }
 
         Ok(())
