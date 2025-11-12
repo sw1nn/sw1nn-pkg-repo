@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v1.2.0 - 2025-11-12
+#### Features
+- (**error**) add path logging for all I/O errors - (8f02691) - Neale Swinnerton
+#### Refactoring
+- (**error**) simplify map_err calls to use map_io_err - (fb9adef) - Neale Swinnerton
+
+- - -
+
 ## v1.1.0 - 2025-11-10
 #### Miscellaneous Chores
 - (**version**) v1.0.2 - (e2ce8cb) - Neale Swinnerton
