@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v1.3.0 - 2025-11-12
+#### Bug Fixes
+- (**pkgbuild**) update source URL to use GitHub - (4e692bf) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**build**) replace cargo set-version with sed approach - (ee45f4a) - Neale Swinnerton
+
+- - -
+
 ## v1.2.0 - 2025-11-12
 #### Features
 - (**error**) add path logging for all I/O errors - (8f02691) - Neale Swinnerton
