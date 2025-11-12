@@ -4,10 +4,10 @@ pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-upload')
 pkgver=1.2.0
 pkgrel=1
 arch=('x86_64')
-url="https://git.sw1nn.net/r/sw1nn-pkg-repo.git/"
+url="https://github.com/sw1nn/sw1nn-pkg-repo"
 license=('MIT')
 makedepends=('rust' 'cargo' 'git' 'zstd')
-source=("$pkgbase::git+ssh://git.sw1nn.net/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")
+source=("$pkgbase::git+https://github.com/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")
 sha256sums=('SKIP')
 
 build() {
