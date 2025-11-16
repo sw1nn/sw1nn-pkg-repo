@@ -23,13 +23,11 @@ use utoipa_rapidoc::RapiDoc;
 /// Uses journald when running as a service (no terminal), fmt when running interactively
 pub fn init_tracing() {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "sw1nn_pkg_repo=debug,tower_http=debug".into());
+        .unwrap_or_else(|_| "sw1nn_pkg_repo=info,tower_http=warn".into());
 
     if std::io::stdout().is_terminal() {
         // Running in a terminal, use formatted output
-        tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .init();
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
     } else {
         // Running as a service, use journald
         tracing_subscriber::registry()
