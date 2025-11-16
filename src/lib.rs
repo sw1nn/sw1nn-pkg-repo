@@ -11,6 +11,7 @@ use api::{AppState, create_api_router};
 use axum::{Router, routing::get};
 use config::Config;
 use repo::serve_file;
+use std::io::IsTerminal;
 use std::sync::Arc;
 use storage::Storage;
 use tower_http::cors::CorsLayer;
@@ -18,15 +19,24 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa_rapidoc::RapiDoc;
 
-/// Initialize the tracing subscriber for logging with systemd-journald support
+/// Initialize the tracing subscriber for logging
+/// Uses journald when running as a service (no terminal), fmt when running interactively
 pub fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "sw1nn_pkg_repo=debug,tower_http=debug".into()),
-        )
-        .with(tracing_journald::layer().expect("Failed to connect to journald"))
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "sw1nn_pkg_repo=debug,tower_http=debug".into());
+
+    if std::io::stdout().is_terminal() {
+        // Running in a terminal, use formatted output
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .init();
+    } else {
+        // Running as a service, use journald
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_journald::layer().expect("Failed to connect to journald"))
+            .init();
+    }
 }
 
 /// Run the package repository service
