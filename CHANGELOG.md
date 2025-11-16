@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v1.4.1 - 2025-11-16
+#### Bug Fixes
+- (**logging**) use fmt layer when running in terminal - (847270e) - Neale Swinnerton
+
+- - -
+
 ## v1.4.0 - 2025-11-16
 #### Features
 - (**logging**) add systemd-journald support for server - (ad9f5cc) - Neale Swinnerton
