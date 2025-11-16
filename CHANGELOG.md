@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v1.4.0 - 2025-11-16
+#### Features
+- (**logging**) add systemd-journald support for server - (ad9f5cc) - Neale Swinnerton
+
+- - -
+
 ## v1.3.0 - 2025-11-12
 #### Bug Fixes
 - (**pkgbuild**) update source URL to use GitHub - (4e692bf) - Neale Swinnerton
