@@ -18,14 +18,14 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa_rapidoc::RapiDoc;
 
-/// Initialize the tracing subscriber for logging
+/// Initialize the tracing subscriber for logging with systemd-journald support
 pub fn init_tracing() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "sw1nn_pkg_repo=debug,tower_http=debug".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_journald::layer().expect("Failed to connect to journald"))
         .init();
 }
 
