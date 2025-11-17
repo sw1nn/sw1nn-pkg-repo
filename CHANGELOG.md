@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v1.5.0 - 2025-11-17
+#### Refactoring
+- rename binary from sw1nn-pkg-repo to sw1nn-pkg-repod - (7a4b0d3) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**logging**) reduce default log verbosity - (aa37c2a) - Neale Swinnerton
+
+- - -
+
 ## v1.4.1 - 2025-11-16
 #### Bug Fixes
 - (**logging**) use fmt layer when running in terminal - (847270e) - Neale Swinnerton
