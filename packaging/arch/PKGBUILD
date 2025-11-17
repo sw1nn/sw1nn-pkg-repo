@@ -30,7 +30,7 @@ package_sw1nn-pkg-repo() {
   cd "$srcdir/$pkgbase"
 
   # Install binary
-  install -Dm755 "target/release/sw1nn-pkg-repo" "$pkgdir/usr/bin/sw1nn-pkg-repo"
+  install -Dm755 "target/release/sw1nn-pkg-repod" "$pkgdir/usr/bin/sw1nn-pkg-repod"
 
   # Install systemd service
   install -Dm644 "assets/sw1nn-pkg-repo.service" "$pkgdir/usr/lib/systemd/system/sw1nn-pkg-repo.service"

@@ -4,7 +4,7 @@ use sw1nn_pkg_repo::run_service;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Debug)]
-#[command(name = "sw1nn-pkg-repo")]
+#[command(name = "sw1nn-pkg-repod")]
 #[command(about = "Package repository server", long_about = None)]
 #[command(version = VERSION)]
 struct Args {

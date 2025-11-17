@@ -7,7 +7,7 @@ Type=simple
 User=pkgrepo
 Group=pkgrepo
 WorkingDirectory=/var/lib/sw1nn-pkg-repo/data
-ExecStart=/usr/bin/sw1nn-pkg-repo
+ExecStart=/usr/bin/sw1nn-pkg-repod
 Restart=always
 RestartSec=10
 

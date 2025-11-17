@@ -56,7 +56,7 @@ export PKG_REPO_STORAGE__DEFAULT_ARCH="x86_64"
 Specify a custom configuration file:
 
 ```bash
-sw1nn-pkg-repo --config /path/to/custom-config.toml
+sw1nn-pkg-repod --config /path/to/custom-config.toml
 ```
 
 ## Running
@@ -132,7 +132,7 @@ sudo pacman -S my-package
 ```
 src/
 ├── bin/
-│   ├── sw1nn-pkg-repo.rs      # Service binary
+│   ├── sw1nn-pkg-repod.rs     # Service binary
 │   └── sw1nn-pkg-upload.rs    # Upload client binary
 ├── lib.rs                      # Library code
 └── ...
