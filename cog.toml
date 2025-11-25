@@ -22,6 +22,6 @@ pre_bump_hooks = [
 post_bump_hooks = [
   "git push",
   "git push origin v{{version}}",
-  "makepkg -D packaging/arch --sign",
-  "sw1nn-pkg-upload packaging/arch/sw1nn-pkg-*-{{version}}-1-x86_64.pkg.tar.zst",
+  "sudo sw1nn-makepkg-chroot -C packaging/arch",
+  "sw1nn-pkg-upload packaging/arch/*-{{version}}-*.pkg.tar.zst",
 ]
