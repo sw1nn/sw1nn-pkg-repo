@@ -5,10 +5,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Display)]
 pub enum Error {
     #[display("IO error at {path}: {error}")]
-    Io {
-        error: std::io::Error,
-        path: String,
-    },
+    Io { error: std::io::Error, path: String },
 
     #[display("Package not found: {pkgname}")]
     PackageNotFound { pkgname: String },

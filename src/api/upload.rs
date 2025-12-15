@@ -339,9 +339,7 @@ pub async fn complete_upload(
         Ok::<_, Error>((pkginfo, sha256, size))
     })
     .await
-    .map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
-    })??;
+    .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
 
     // Create filename
     let filename = format!(

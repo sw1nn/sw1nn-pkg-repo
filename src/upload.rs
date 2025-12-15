@@ -102,16 +102,20 @@ impl UploadSessionStore {
 
         // Create upload directory
         let upload_dir = self.upload_dir(&upload_id)?;
-        fs::create_dir_all(&upload_dir).await.map_io_err(&upload_dir)?;
+        fs::create_dir_all(&upload_dir)
+            .await
+            .map_io_err(&upload_dir)?;
 
         // Create chunks subdirectory
         let chunks_dir = upload_dir.join("chunks");
-        fs::create_dir_all(&chunks_dir).await.map_io_err(&chunks_dir)?;
+        fs::create_dir_all(&chunks_dir)
+            .await
+            .map_io_err(&chunks_dir)?;
 
         // Save session metadata
         let metadata_path = upload_dir.join("metadata.json");
-        let metadata_json = serde_json::to_string_pretty(&session)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let metadata_json =
+            serde_json::to_string_pretty(&session).map_err(|e| std::io::Error::other(e))?;
         fs::write(&metadata_path, metadata_json)
             .await
             .map_io_err(&metadata_path)?;
@@ -141,8 +145,8 @@ impl UploadSessionStore {
         // Update metadata file
         let upload_dir = self.upload_dir(&upload_id)?;
         let metadata_path = upload_dir.join("metadata.json");
-        let metadata_json = serde_json::to_string_pretty(&session)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let metadata_json =
+            serde_json::to_string_pretty(&session).map_err(|e| std::io::Error::other(e))?;
         fs::write(&metadata_path, metadata_json)
             .await
             .map_io_err(&metadata_path)?;
@@ -165,8 +169,8 @@ impl UploadSessionStore {
         if upload_dir.exists() {
             let chunks_dir = upload_dir.join("chunks");
             if chunks_dir.exists() {
-                let mut entries = fs::read_dir(&chunks_dir).await?;
-                while let Some(entry) = entries.next_entry().await? {
+                let mut entries = fs::read_dir(&chunks_dir).await.map_io_err(&chunks_dir)?;
+                while let Some(entry) = entries.next_entry().await.map_io_err(&chunks_dir)? {
                     if let Ok(metadata) = entry.metadata().await {
                         bytes_freed += metadata.len();
                         deleted_chunks += 1;
@@ -266,7 +270,9 @@ impl UploadSessionStore {
 
         // Write chunk to disk
         let chunk_path = self.chunk_path(upload_id, chunk_number)?;
-        let mut file = fs::File::create(&chunk_path).await.map_io_err(&chunk_path)?;
+        let mut file = fs::File::create(&chunk_path)
+            .await
+            .map_io_err(&chunk_path)?;
         file.write_all(data).await.map_io_err(&chunk_path)?;
         file.sync_all().await.map_io_err(&chunk_path)?;
 
@@ -321,7 +327,7 @@ impl UploadSessionStore {
         // Stream chunks to output file
         for chunk_num in 1..=session.total_chunks {
             let chunk_path = self.chunk_path(upload_id, chunk_num)?;
-            let chunk_data = fs::read(&chunk_path).await?;
+            let chunk_data = fs::read(&chunk_path).await.map_io_err(&chunk_path)?;
 
             // Update hash
             hasher.update(&chunk_data);
@@ -369,7 +375,7 @@ impl UploadSessionStore {
         let sig_path = self.signature_path(upload_id)?;
 
         if sig_path.exists() {
-            let data = fs::read(&sig_path).await?;
+            let data = fs::read(&sig_path).await.map_io_err(&sig_path)?;
             Ok(Some(data))
         } else {
             Ok(None)

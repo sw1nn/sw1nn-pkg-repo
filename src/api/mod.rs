@@ -1,7 +1,7 @@
 mod upload;
 
 use crate::config::Config;
-use crate::error::Result;
+use crate::error::{Result, ResultIoExt};
 use crate::metadata::{extract_pkginfo, generate_files_db, generate_repo_db};
 use crate::models::{Package, PackageQuery};
 use crate::storage::Storage;
@@ -49,13 +49,11 @@ pub async fn list_packages(
     } else {
         let repo = query
             .repo
-            .as_ref()
-            .map(String::as_str)
+            .as_deref()
             .unwrap_or(&state.config.storage.default_repo);
         let arch = query
             .arch
-            .as_ref()
-            .map(String::as_str)
+            .as_deref()
             .unwrap_or(&state.config.storage.default_arch);
 
         state.storage.list_packages(repo, arch).await?
@@ -127,14 +125,12 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
     let mut pkg_data = Vec::new();
     for pkg in packages {
         let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
-        let data = tokio::fs::read(&pkg_path).await?;
+        let data = tokio::fs::read(&pkg_path).await.map_io_err(&pkg_path)?;
 
         // Extract pkginfo in blocking task (CPU-intensive decompression)
         let pkginfo = tokio::task::spawn_blocking(move || extract_pkginfo(&data))
             .await
-            .map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
-            })??;
+            .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
 
         pkg_data.push((pkg, pkginfo));
     }

@@ -6,7 +6,7 @@ use axum::{
 use std::sync::Arc;
 
 use crate::api::AppState;
-use crate::error::Result;
+use crate::error::{Result, ResultIoExt};
 
 /// Serve repository files (packages or database files)
 /// This handles both .pkg.tar.zst files and .db/.files database files
@@ -33,7 +33,7 @@ pub async fn serve_file(
         return Ok((StatusCode::NOT_FOUND, "File not found").into_response());
     }
 
-    let data = tokio::fs::read(&file_path).await?;
+    let data = tokio::fs::read(&file_path).await.map_io_err(&file_path)?;
 
     // Determine content type based on extension
     let content_type = if filename.ends_with(".pkg.tar.zst") {

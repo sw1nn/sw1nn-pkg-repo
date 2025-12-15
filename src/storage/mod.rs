@@ -42,11 +42,12 @@ fn validate_path_within_base(base: &Path, path: &Path) -> Result<()> {
     // For the constructed path, we need to check if it would be within base
     // even if it doesn't exist yet. We check the parent if the path doesn't exist.
     let path_to_check = if path.exists() {
-        path.canonicalize()?
+        path.canonicalize().map_io_err(path)?
     } else if let Some(parent) = path.parent() {
         if parent.exists() {
             parent
-                .canonicalize()?
+                .canonicalize()
+                .map_io_err(parent)?
                 .join(path.file_name().ok_or_else(|| Error::InvalidPackage {
                     pkgname: "Invalid path structure".to_string(),
                 })?)
@@ -176,8 +177,8 @@ impl Storage {
         file.sync_all().await.map_io_err(&pkg_path)?;
 
         // Write metadata
-        let metadata_json = serde_json::to_string_pretty(package)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let metadata_json =
+            serde_json::to_string_pretty(package).map_err(|e| std::io::Error::other(e))?;
         fs::write(&meta_path, metadata_json)
             .await
             .map_io_err(&meta_path)?;
@@ -219,8 +220,8 @@ impl Storage {
             .map_io_err(&pkg_path)?;
 
         // Write metadata
-        let metadata_json = serde_json::to_string_pretty(package)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let metadata_json =
+            serde_json::to_string_pretty(package).map_err(|e| std::io::Error::other(e))?;
         fs::write(&meta_path, metadata_json)
             .await
             .map_io_err(&meta_path)?;
@@ -243,9 +244,11 @@ impl Storage {
             });
         }
 
-        let content = fs::read_to_string(&meta_path).await?;
-        let package: Package = serde_json::from_str(&content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let content = fs::read_to_string(&meta_path)
+            .await
+            .map_io_err(&meta_path)?;
+        let package: Package =
+            serde_json::from_str(&content).map_err(|e| std::io::Error::other(e))?;
 
         Ok(package)
     }
@@ -259,12 +262,12 @@ impl Storage {
         }
 
         let mut packages = Vec::new();
-        let mut entries = fs::read_dir(&meta_dir).await?;
+        let mut entries = fs::read_dir(&meta_dir).await.map_io_err(&meta_dir)?;
 
-        while let Some(entry) = entries.next_entry().await? {
+        while let Some(entry) = entries.next_entry().await.map_io_err(&meta_dir)? {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let content = fs::read_to_string(&path).await?;
+                let content = fs::read_to_string(&path).await.map_io_err(&path)?;
                 if let Ok(package) = serde_json::from_str::<Package>(&content) {
                     packages.push(package);
                 }
@@ -284,8 +287,14 @@ impl Storage {
         }
 
         // Iterate through all repos
-        let mut repo_entries = fs::read_dir(&self.base_path).await?;
-        while let Some(repo_entry) = repo_entries.next_entry().await? {
+        let mut repo_entries = fs::read_dir(&self.base_path)
+            .await
+            .map_io_err(&self.base_path)?;
+        while let Some(repo_entry) = repo_entries
+            .next_entry()
+            .await
+            .map_io_err(&self.base_path)?
+        {
             if !repo_entry.path().is_dir() {
                 continue;
             }
@@ -297,8 +306,8 @@ impl Storage {
             }
 
             // Iterate through all architectures
-            let mut arch_entries = fs::read_dir(&os_dir).await?;
-            while let Some(arch_entry) = arch_entries.next_entry().await? {
+            let mut arch_entries = fs::read_dir(&os_dir).await.map_io_err(&os_dir)?;
+            while let Some(arch_entry) = arch_entries.next_entry().await.map_io_err(&os_dir)? {
                 if !arch_entry.path().is_dir() {
                     continue;
                 }
@@ -310,11 +319,13 @@ impl Storage {
                 }
 
                 // Read all packages in this repo/arch
-                let mut meta_entries = fs::read_dir(&meta_dir).await?;
-                while let Some(meta_entry) = meta_entries.next_entry().await? {
+                let mut meta_entries = fs::read_dir(&meta_dir).await.map_io_err(&meta_dir)?;
+                while let Some(meta_entry) =
+                    meta_entries.next_entry().await.map_io_err(&meta_dir)?
+                {
                     let path = meta_entry.path();
                     if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                        let content = fs::read_to_string(&path).await?;
+                        let content = fs::read_to_string(&path).await.map_io_err(&path)?;
                         if let Ok(package) = serde_json::from_str::<Package>(&content) {
                             all_packages.push(package);
                         }

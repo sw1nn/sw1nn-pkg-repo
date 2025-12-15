@@ -68,7 +68,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for license in &pkginfo.license {
             desc.push_str(&format!("{}\n", license));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     // Dependencies
@@ -77,7 +77,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for dep in &pkginfo.depends {
             desc.push_str(&format!("{}\n", dep));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     // Optional dependencies
@@ -86,7 +86,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for dep in &pkginfo.optdepends {
             desc.push_str(&format!("{}\n", dep));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     // Conflicts
@@ -95,7 +95,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for conflict in &pkginfo.conflicts {
             desc.push_str(&format!("{}\n", conflict));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     // Provides
@@ -104,7 +104,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for provides in &pkginfo.provides {
             desc.push_str(&format!("{}\n", provides));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     // Replaces
@@ -113,7 +113,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for replaces in &pkginfo.replaces {
             desc.push_str(&format!("{}\n", replaces));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     // Groups
@@ -122,7 +122,7 @@ pub fn generate_desc(pkg: &Package, pkginfo: &PkgInfo) -> String {
         for group in &pkginfo.groups {
             desc.push_str(&format!("{}\n", group));
         }
-        desc.push_str("\n");
+        desc.push('\n');
     }
 
     desc
@@ -165,9 +165,7 @@ pub async fn generate_repo_db(
         Ok::<_, crate::error::Error>(())
     })
     .await
-    .map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
-    })??;
+    .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
 
     // Create symlink
     if db_link.exists() {
@@ -196,9 +194,7 @@ pub async fn generate_repo_db(
         Ok::<_, Error>(())
     })
     .await
-    .map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
-    })??;
+    .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
 
     Ok(())
 }
@@ -247,9 +243,7 @@ pub async fn generate_files_db(
         Ok::<_, crate::error::Error>(())
     })
     .await
-    .map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
-    })??;
+    .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
 
     // Create symlink
     if files_link.exists() {
@@ -273,15 +267,12 @@ pub async fn generate_files_db(
         #[cfg(not(unix))]
         {
             // On non-Unix systems, just copy the file
-            std::fs::copy(&files_path_for_copy, &files_link_clone)
-                .map_io_err(&files_link_clone)?;
+            std::fs::copy(&files_path_for_copy, &files_link_clone).map_io_err(&files_link_clone)?;
         }
         Ok::<_, Error>(())
     })
     .await
-    .map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("Task join error: {}", e))
-    })??;
+    .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
 
     Ok(())
 }
