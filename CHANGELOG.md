@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v1.5.1 - 2025-12-15
+#### Bug Fixes
+- (**error**) add path context to all IO error conversions - (f2f17b0) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**pkg**) Update packaging to sw1nn standard. - (023bfff) - Neale Swinnerton
+
+- - -
+
 ## v1.5.0 - 2025-11-17
 #### Refactoring
 - rename binary from sw1nn-pkg-repo to sw1nn-pkg-repod - (7a4b0d3) - Neale Swinnerton
