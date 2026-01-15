@@ -3,6 +3,11 @@ use crate::models::Package;
 use crate::storage::Storage;
 use std::collections::HashMap;
 
+/// Package with parsed semver components: (Package, major, minor, patch, pkgrel)
+type PackageWithVersion = (Package, u64, u64, u64, u64);
+/// Semver key: (major, minor, patch)
+type SemverKey = (u64, u64, u64);
+
 /// Parse semantic version and pkgrel from Arch Linux package version string
 ///
 /// Format: `[epoch:]major.minor.patch-pkgrel`
@@ -64,7 +69,7 @@ pub async fn cleanup_old_versions(
     }
 
     // Parse versions and filter out non-semver packages
-    let mut packages_with_versions: Vec<(Package, u64, u64, u64, u64)> = Vec::new();
+    let mut packages_with_versions: Vec<PackageWithVersion> = Vec::new();
 
     for package in packages.iter() {
         if let Some((major, minor, patch, pkgrel)) = parse_semver_from_pkgver(&package.version) {
@@ -84,7 +89,7 @@ pub async fn cleanup_old_versions(
     }
 
     // Deduplicate by pkgver: group by (major, minor, patch), keep only newest pkgrel
-    let mut pkgver_map: HashMap<(u64, u64, u64), (Package, u64, u64, u64, u64)> = HashMap::new();
+    let mut pkgver_map: HashMap<SemverKey, PackageWithVersion> = HashMap::new();
 
     for (pkg, major, minor, patch, pkgrel) in packages_with_versions {
         let key = (major, minor, patch);
@@ -101,7 +106,7 @@ pub async fn cleanup_old_versions(
     }
 
     // Convert back to vector
-    let mut deduplicated: Vec<(Package, u64, u64, u64, u64)> = pkgver_map.into_values().collect();
+    let mut deduplicated: Vec<PackageWithVersion> = pkgver_map.into_values().collect();
 
     // If only 1 version after deduplication, nothing to clean up
     if deduplicated.len() <= 1 {

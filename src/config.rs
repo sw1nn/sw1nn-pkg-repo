@@ -121,8 +121,10 @@ impl Config {
 
         Ok(config)
     }
+}
 
-    pub fn default() -> Self {
+impl Default for Config {
+    fn default() -> Self {
         let mut data_path = default_data_path();
 
         // Convert relative path to absolute and clean it

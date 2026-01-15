@@ -38,10 +38,11 @@ pub async fn serve_file(
     // Determine content type based on extension
     let content_type = if filename.ends_with(".pkg.tar.zst") {
         "application/zstd"
-    } else if filename.ends_with(".tar.gz") {
+    } else if filename.ends_with(".tar.gz")
+        || filename.ends_with(".db")
+        || filename.ends_with(".files")
+    {
         "application/gzip"
-    } else if filename.ends_with(".db") || filename.ends_with(".files") {
-        "application/gzip" // These are usually symlinks to .tar.gz
     } else {
         "application/octet-stream"
     };
