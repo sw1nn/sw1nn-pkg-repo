@@ -16,7 +16,13 @@ use utoipa::ToSchema;
 pub struct DeleteVersionsRequest {
     /// List of version specifications - can be exact versions (e.g., "1.5.3-1")
     /// or semver ranges (e.g., "^1.0.0", ">=1.0.0, <2.0.0")
+    /// Ignored if apply_cleanup_policy is true
+    #[serde(default)]
     pub versions: Vec<String>,
+    /// Apply default cleanup policy: keep current version, latest of same minor,
+    /// and latest of previous minor. When true, ignores versions field.
+    #[serde(default)]
+    pub apply_cleanup_policy: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,31 +100,37 @@ pub async fn delete_versions(
         });
     }
 
-    // Determine which versions to delete by processing each version spec
-    // Each spec can be either an exact version match or a semver range
-    use std::collections::HashSet;
-    let mut to_delete_set: HashSet<String> = HashSet::new();
+    // Determine which versions to delete
+    let to_delete: Vec<Package> = if request.apply_cleanup_policy {
+        // Apply default cleanup policy using cleanup_old_versions
+        crate::storage::cleanup_old_versions(&state.storage, &name, &repo, &arch).await?
+    } else {
+        // Manual deletion by processing each version spec
+        // Each spec can be either an exact version match or a semver range
+        use std::collections::HashSet;
+        let mut to_delete_set: HashSet<String> = HashSet::new();
 
-    for version_spec in &request.versions {
-        // Try parsing as semver range first
-        if let Ok(version_req) = semver::VersionReq::parse(version_spec) {
-            // It's a semver range - match all packages against it
-            for pkg in &packages {
-                if version_matches_range(&pkg.version, &version_req).unwrap_or(false) {
-                    to_delete_set.insert(pkg.version.clone());
+        for version_spec in &request.versions {
+            // Try parsing as semver range first
+            if let Ok(version_req) = semver::VersionReq::parse(version_spec) {
+                // It's a semver range - match all packages against it
+                for pkg in &packages {
+                    if version_matches_range(&pkg.version, &version_req).unwrap_or(false) {
+                        to_delete_set.insert(pkg.version.clone());
+                    }
                 }
+            } else {
+                // Not a valid semver range - treat as exact version match
+                to_delete_set.insert(version_spec.clone());
             }
-        } else {
-            // Not a valid semver range - treat as exact version match
-            to_delete_set.insert(version_spec.clone());
         }
-    }
 
-    // Filter packages to only those in our to_delete set
-    let to_delete: Vec<Package> = packages
-        .into_iter()
-        .filter(|p| to_delete_set.contains(&p.version))
-        .collect();
+        // Filter packages to only those in our to_delete set
+        packages
+            .into_iter()
+            .filter(|p| to_delete_set.contains(&p.version))
+            .collect()
+    };
 
     // Check if any versions matched
     if to_delete.is_empty() {
@@ -127,28 +139,40 @@ pub async fn delete_versions(
         });
     }
 
-    // Delete all matched packages
-    for package in &to_delete {
-        state.storage.delete_package(package).await?;
-        tracing::info!(
-            package = %package.name,
-            version = %package.version,
-            repo = %package.repo,
-            arch = %package.arch,
-            "Deleted package version"
-        );
+    // Delete all matched packages (unless already deleted by cleanup policy)
+    if !request.apply_cleanup_policy {
+        for package in &to_delete {
+            state.storage.delete_package(package).await?;
+            tracing::info!(
+                package = %package.name,
+                version = %package.version,
+                repo = %package.repo,
+                arch = %package.arch,
+                "Deleted package version"
+            );
+        }
     }
 
     // Regenerate repository database
     regenerate_repo_db(&state.storage, &repo, &arch).await?;
 
-    tracing::info!(
-        package = %name,
-        repo = %repo,
-        arch = %arch,
-        deleted_count = to_delete.len(),
-        "Deleted package versions"
-    );
+    if request.apply_cleanup_policy {
+        tracing::info!(
+            package = %name,
+            repo = %repo,
+            arch = %arch,
+            deleted_count = to_delete.len(),
+            "Applied cleanup policy and deleted old package versions"
+        );
+    } else {
+        tracing::info!(
+            package = %name,
+            repo = %repo,
+            arch = %arch,
+            deleted_count = to_delete.len(),
+            "Deleted package versions"
+        );
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
