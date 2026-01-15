@@ -51,6 +51,8 @@ package_sw1nn-pkg-repo() {
 package_sw1nn-pkg-ctl() {
   pkgdesc="Upload client for sw1nn-pkg-repo package repository"
   depends=('zstd')
+  replaces=('sw1nn-pkg-upload')
+  conflicts=('sw1nn-pkg-upload')
 
   cd "$srcdir/$pkgbase"
 
