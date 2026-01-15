@@ -1,6 +1,15 @@
 # Changelog
 
 - - -
+## v1.7.0 - 2026-01-15
+#### Features
+- (**api**) refactor delete versions to POST with JSON body - (0248152) - Neale Swinnerton
+- (**api**) add cleanup policy trigger to delete versions endpoint - (32ba7b9) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**lint**) apply cargo fmt fixes - (0624131) - Neale Swinnerton
+
+- - -
+
 ## v1.6.0 - 2026-01-15
 #### Features
 - (**api**) add endpoint to delete package versions - (87224b1) - Neale Swinnerton
