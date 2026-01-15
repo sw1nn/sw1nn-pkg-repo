@@ -180,8 +180,7 @@ impl Storage {
         file.sync_all().await.map_io_err(&pkg_path)?;
 
         // Write metadata
-        let metadata_json =
-            serde_json::to_string_pretty(package).map_err(|e| std::io::Error::other(e))?;
+        let metadata_json = serde_json::to_string_pretty(package).map_err(std::io::Error::other)?;
         fs::write(&meta_path, metadata_json)
             .await
             .map_io_err(&meta_path)?;
@@ -223,8 +222,7 @@ impl Storage {
             .map_io_err(&pkg_path)?;
 
         // Write metadata
-        let metadata_json =
-            serde_json::to_string_pretty(package).map_err(|e| std::io::Error::other(e))?;
+        let metadata_json = serde_json::to_string_pretty(package).map_err(std::io::Error::other)?;
         fs::write(&meta_path, metadata_json)
             .await
             .map_io_err(&meta_path)?;
@@ -250,8 +248,7 @@ impl Storage {
         let content = fs::read_to_string(&meta_path)
             .await
             .map_io_err(&meta_path)?;
-        let package: Package =
-            serde_json::from_str(&content).map_err(|e| std::io::Error::other(e))?;
+        let package: Package = serde_json::from_str(&content).map_err(std::io::Error::other)?;
 
         Ok(package)
     }

@@ -1,3 +1,4 @@
+pub mod delete_versions;
 mod upload;
 
 use crate::config::Config;
@@ -125,7 +126,20 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
     let mut pkg_data = Vec::new();
     for pkg in packages {
         let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
-        let data = tokio::fs::read(&pkg_path).await.map_io_err(&pkg_path)?;
+
+        // Read package file, skipping if missing (orphaned metadata)
+        let data = match tokio::fs::read(&pkg_path).await {
+            Ok(data) => data,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::warn!(
+                    path = %pkg_path.display(),
+                    package = %pkg.name,
+                    "Orphaned metadata - package file missing, skipping"
+                );
+                continue;
+            }
+            Err(e) => return Err(e).map_io_err(&pkg_path),
+        };
 
         // Extract pkginfo in blocking task (CPU-intensive decompression)
         let pkginfo = tokio::task::spawn_blocking(move || extract_pkginfo(&data))
@@ -154,7 +168,8 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
             upload::UploadSignatureResponse,
             upload::CompleteUploadRequest,
             upload::ChunkInfo,
-            upload::AbortUploadResponse
+            upload::AbortUploadResponse,
+            delete_versions::DeleteVersionsRequest
         )
     ),
     tags(
@@ -169,6 +184,7 @@ pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(list_packages))
         .routes(routes!(delete_package))
+        .routes(routes!(delete_versions::delete_versions))
         .routes(routes!(upload::initiate_upload))
         .routes(routes!(upload::upload_chunk))
         .routes(routes!(upload::upload_signature))

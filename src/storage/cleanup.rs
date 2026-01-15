@@ -101,13 +101,15 @@ pub async fn cleanup_old_versions(
     }
 
     // Convert back to vector
-    let mut deduplicated: Vec<(Package, u64, u64, u64, u64)> =
-        pkgver_map.into_values().collect();
+    let mut deduplicated: Vec<(Package, u64, u64, u64, u64)> = pkgver_map.into_values().collect();
 
     // If only 1 version after deduplication, nothing to clean up
     if deduplicated.len() <= 1 {
         // But we might need to delete old pkgrels
-        let kept_versions: Vec<String> = deduplicated.iter().map(|(p, _, _, _, _)| p.version.clone()).collect();
+        let kept_versions: Vec<String> = deduplicated
+            .iter()
+            .map(|(p, _, _, _, _)| p.version.clone())
+            .collect();
 
         let mut to_delete = Vec::new();
         for package in packages {
@@ -132,12 +134,15 @@ pub async fn cleanup_old_versions(
 
     // Sort by version descending (newest first)
     // Compare tuples (major, minor, patch, pkgrel) in reverse order
-    deduplicated.sort_by(|(_, maj_a, min_a, pat_a, rel_a), (_, maj_b, min_b, pat_b, rel_b)| {
-        (maj_b, min_b, pat_b, rel_b).cmp(&(maj_a, min_a, pat_a, rel_a))
-    });
+    deduplicated.sort_by(
+        |(_, maj_a, min_a, pat_a, rel_a), (_, maj_b, min_b, pat_b, rel_b)| {
+            (maj_b, min_b, pat_b, rel_b).cmp(&(maj_a, min_a, pat_a, rel_a))
+        },
+    );
 
     // Identify versions to keep
-    let (current_pkg, current_major, current_minor, _current_patch, _current_pkgrel) = &deduplicated[0];
+    let (current_pkg, current_major, current_minor, _current_patch, _current_pkgrel) =
+        &deduplicated[0];
 
     let mut versions_to_keep = vec![current_pkg.clone()];
 

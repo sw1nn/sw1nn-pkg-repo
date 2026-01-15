@@ -115,7 +115,7 @@ impl UploadSessionStore {
         // Save session metadata
         let metadata_path = upload_dir.join("metadata.json");
         let metadata_json =
-            serde_json::to_string_pretty(&session).map_err(|e| std::io::Error::other(e))?;
+            serde_json::to_string_pretty(&session).map_err(std::io::Error::other)?;
         fs::write(&metadata_path, metadata_json)
             .await
             .map_io_err(&metadata_path)?;
@@ -146,7 +146,7 @@ impl UploadSessionStore {
         let upload_dir = self.upload_dir(&upload_id)?;
         let metadata_path = upload_dir.join("metadata.json");
         let metadata_json =
-            serde_json::to_string_pretty(&session).map_err(|e| std::io::Error::other(e))?;
+            serde_json::to_string_pretty(&session).map_err(std::io::Error::other)?;
         fs::write(&metadata_path, metadata_json)
             .await
             .map_io_err(&metadata_path)?;
