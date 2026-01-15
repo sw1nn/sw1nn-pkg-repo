@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.2.0 - 2026-01-15
+#### Features
+- (**cli**) color pkgrel grey and use fixed-width version column - (169c479) - Neale Swinnerton
+
+- - -
+
 ## v2.1.0 - 2026-01-15
 #### Features
 - (**cli**) add list command with filtering, sorting and color options - (ce76994) - Neale Swinnerton
