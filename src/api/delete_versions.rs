@@ -1,11 +1,11 @@
+use crate::AppState;
 use crate::api::regenerate_repo_db;
 use crate::error::{Error, Result};
 use crate::models::Package;
-use crate::AppState;
 use axum::{
+    Json,
     extract::{Path as AxumPath, State},
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

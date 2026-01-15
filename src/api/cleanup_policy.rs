@@ -1,8 +1,8 @@
+use crate::AppState;
 use crate::api::regenerate_repo_db;
 use crate::error::Result;
 use crate::models::Package;
-use crate::AppState;
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{Json, extract::State, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -106,8 +106,7 @@ pub async fn apply_cleanup_policy(
                 .await?;
 
         if !deleted.is_empty() {
-            let deleted_versions: Vec<String> =
-                deleted.iter().map(|p| p.version.clone()).collect();
+            let deleted_versions: Vec<String> = deleted.iter().map(|p| p.version.clone()).collect();
             let count = deleted.len();
 
             tracing::info!(
