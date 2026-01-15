@@ -462,12 +462,8 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
         .max()
         .unwrap_or(4)
         .max(4);
-    let version_width = packages
-        .iter()
-        .map(|p| p.version.len())
-        .max()
-        .unwrap_or(7)
-        .max(7);
+    // Fixed width for version column
+    let version_width = 12;
     let arch_width = packages
         .iter()
         .map(|p| p.arch.len())
@@ -502,10 +498,11 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
         let size_str = format_size(pkg.size, size_unit);
         let created_str = pkg.created_at.format("%Y-%m-%d %H:%M").to_string();
 
+        let version_str = format_version(&pkg.version, version_width);
         println!(
-            "{:name_width$}  {:version_width$}  {:arch_width$}  {:repo_width$}  {:>10}  {}",
+            "{:name_width$}  {}  {:arch_width$}  {:repo_width$}  {:>10}  {}",
             pkg.name.green(),
-            pkg.version.yellow(),
+            version_str,
             pkg.arch,
             pkg.repo,
             size_str.bright_black(),
@@ -528,6 +525,24 @@ fn format_size(bytes: u64, unit: SizeUnit) -> String {
         SizeUnit::Decimal => format!("{:.1}", byte.get_appropriate_unit(UnitType::Decimal)),
         SizeUnit::Bytes => format!("{bytes} B"),
     }
+}
+
+/// Format version string with pkgver in yellow and pkgrel in grey, left-aligned to width
+fn format_version(version: &str, width: usize) -> String {
+    // Arch package versions are formatted as pkgver-pkgrel
+    // e.g., "2.1.0-1" where "2.1.0" is pkgver and "1" is pkgrel
+    let colored = if let Some(last_dash_pos) = version.rfind('-') {
+        let pkgver = &version[..last_dash_pos];
+        let pkgrel = &version[last_dash_pos..]; // includes the '-'
+        format!("{}{}", pkgver.yellow(), pkgrel.bright_black())
+    } else {
+        // No pkgrel separator found, just color the whole thing yellow
+        version.yellow().to_string()
+    };
+
+    // Left-align by appending spaces (ANSI codes don't count for visible width)
+    let padding = width.saturating_sub(version.len());
+    format!("{colored}{:padding$}", "")
 }
 
 /// Upload a package using the simple (non-chunked) API
