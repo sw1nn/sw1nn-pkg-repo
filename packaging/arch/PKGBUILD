@@ -59,6 +59,9 @@ package_sw1nn-pkg-ctl() {
   # Install binary
   install -Dm755 "target/release/sw1nn-pkg-ctl" "$pkgdir/usr/bin/sw1nn-pkg-ctl"
 
+  # Install zsh completion
+  install -Dm644 "assets/_sw1nn-pkg-ctl" "$pkgdir/usr/share/zsh/site-functions/_sw1nn-pkg-ctl"
+
   # Install documentation
   install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

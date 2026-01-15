@@ -1,0 +1,67 @@
+#compdef sw1nn-pkg-ctl
+
+_sw1nn-pkg-ctl() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    local -a global_opts
+    global_opts=(
+        '--color[Color output mode]:mode:(auto always never)'
+        '--colour[Color output mode (alias)]:mode:(auto always never)'
+        '(-h --help)'{-h,--help}'[Print help]'
+        '(-V --version)'{-V,--version}'[Print version]'
+    )
+
+    _arguments -C \
+        $global_opts \
+        '1:command:->commands' \
+        '*::arg:->args'
+
+    case $state in
+        commands)
+            local -a commands
+            commands=(
+                'upload:Upload package(s) to the repository'
+                'delete:Delete package version(s) from the repository'
+                'list:List packages in the repository'
+                'help:Print help for a command'
+            )
+            _describe -t commands 'command' commands
+            ;;
+        args)
+            case $line[1] in
+                upload)
+                    _arguments \
+                        $global_opts \
+                        '*:package file:_files -g "*.pkg.tar.zst"'
+                    ;;
+                delete)
+                    _arguments \
+                        $global_opts \
+                        '(-n --name)'{-n,--name}'[Package name]:name:' \
+                        '*'{-v,--version}'[Version(s) to delete]:version:' \
+                        '(-r --repo)'{-r,--repo}'[Repository name]:repo:' \
+                        '(-a --arch)'{-a,--arch}'[Architecture]:arch:(x86_64 aarch64 any)'
+                    ;;
+                list)
+                    _arguments \
+                        $global_opts \
+                        '(-n --name)'{-n,--name}'[Filter by name (substring match)]:name:' \
+                        '(-R --repo)'{-R,--repo}'[Filter by repository]:repo:' \
+                        '(-a --arch)'{-a,--arch}'[Filter by architecture]:arch:(x86_64 aarch64 any)' \
+                        '(-j --json)'{-j,--json}'[Output as JSON]' \
+                        '(-u --unit)'{-u,--unit}'[Size unit format]:unit:(binary decimal bytes)' \
+                        '(-s --sort)'{-s,--sort}'[Sort by field]:field:(name version size created arch repo)' \
+                        '(-r --reverse)'{-r,--reverse}'[Reverse sort order]'
+                    ;;
+                help)
+                    local -a subcommands
+                    subcommands=(upload delete list)
+                    _describe -t subcommands 'subcommand' subcommands
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_sw1nn-pkg-ctl "$@"

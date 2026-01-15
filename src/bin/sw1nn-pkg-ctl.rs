@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use byte_unit::{Byte, UnitType};
+use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,26 @@ struct Args {
     /// Path(s) to package file(s) (.pkg.tar.zst) - for backwards compatibility
     #[arg(trailing_var_arg = true)]
     package_files: Vec<String>,
+
+    /// Color output mode (also respects NO_COLOR and FORCE_COLOR env vars)
+    #[arg(
+        long,
+        visible_alias = "colour",
+        value_enum,
+        default_value = "auto",
+        global = true
+    )]
+    color: ColorMode,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ColorMode {
+    /// Auto-detect based on terminal
+    Auto,
+    /// Always use colors
+    Always,
+    /// Never use colors
+    Never,
 }
 
 #[derive(Subcommand, Debug)]
@@ -51,6 +72,56 @@ enum Commands {
         #[arg(short, long)]
         arch: Option<String>,
     },
+    /// List packages in the repository
+    List {
+        /// Filter packages by name (substring match)
+        #[arg(short = 'n', long)]
+        name: Option<String>,
+        /// Filter by repository name
+        #[arg(short = 'R', long)]
+        repo: Option<String>,
+        /// Filter by architecture
+        #[arg(short = 'a', long)]
+        arch: Option<String>,
+        /// Output as JSON instead of table
+        #[arg(short = 'j', long)]
+        json: bool,
+        /// Size unit format
+        #[arg(short = 'u', long, value_enum, default_value = "binary")]
+        unit: SizeUnit,
+        /// Sort by field
+        #[arg(short = 's', long, value_enum, default_value = "name")]
+        sort: SortField,
+        /// Reverse sort order
+        #[arg(short = 'r', long)]
+        reverse: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SizeUnit {
+    /// Binary units (KiB, MiB, GiB) - base 1024
+    Binary,
+    /// Decimal units (KB, MB, GB) - base 1000
+    Decimal,
+    /// Raw bytes
+    Bytes,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SortField {
+    /// Sort by package name
+    Name,
+    /// Sort by version
+    Version,
+    /// Sort by size
+    Size,
+    /// Sort by creation time
+    Created,
+    /// Sort by architecture
+    Arch,
+    /// Sort by repository
+    Repo,
 }
 
 #[derive(Debug, Serialize)]
@@ -121,6 +192,9 @@ async fn main() {
 
     let args = Args::parse();
 
+    // Configure color output
+    configure_colors(args.color);
+
     let base_url =
         std::env::var("SW1NN_REPO_URL").unwrap_or_else(|_| "https://repo.sw1nn.net".to_string());
 
@@ -139,11 +213,25 @@ async fn main() {
         }) => {
             run_delete(&client, &base_url, name, version, repo, arch).await;
         }
+        Some(Commands::List {
+            name,
+            repo,
+            arch,
+            json,
+            unit,
+            sort,
+            reverse,
+        }) => {
+            run_list(
+                &client, &base_url, name, repo, arch, json, unit, sort, reverse,
+            )
+            .await;
+        }
         None => {
             // Backwards compatibility: treat positional args as upload
             if args.package_files.is_empty() {
                 tracing::error!(
-                    "No command specified. Use 'upload' or 'delete' subcommand, or provide package files directly."
+                    "No command specified. Use 'upload', 'delete', or 'list' subcommand, or provide package files directly."
                 );
                 process::exit(1);
             }
@@ -247,6 +335,198 @@ async fn run_delete(
             tracing::error!(error = %e, "Delete failed");
             process::exit(1);
         }
+    }
+}
+
+fn configure_colors(mode: ColorMode) {
+    // Check environment variables first (they take precedence)
+    if std::env::var("NO_COLOR").is_ok() {
+        colored::control::set_override(false);
+        return;
+    }
+    if std::env::var("FORCE_COLOR").is_ok() {
+        colored::control::set_override(true);
+        return;
+    }
+
+    // Apply CLI option
+    match mode {
+        ColorMode::Auto => {
+            // Let colored crate auto-detect (default behavior)
+        }
+        ColorMode::Always => {
+            colored::control::set_override(true);
+        }
+        ColorMode::Never => {
+            colored::control::set_override(false);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_list(
+    client: &reqwest::Client,
+    base_url: &str,
+    name_filter: Option<String>,
+    repo_filter: Option<String>,
+    arch_filter: Option<String>,
+    json_output: bool,
+    size_unit: SizeUnit,
+    sort_field: SortField,
+    reverse: bool,
+) {
+    let result = list_packages(client, base_url).await;
+
+    match result {
+        Ok(mut packages) => {
+            // Apply filters
+            if let Some(ref name) = name_filter {
+                let name_lower = name.to_lowercase();
+                packages.retain(|p| p.name.to_lowercase().contains(&name_lower));
+            }
+            if let Some(ref repo) = repo_filter {
+                packages.retain(|p| p.repo == *repo);
+            }
+            if let Some(ref arch) = arch_filter {
+                packages.retain(|p| p.arch == *arch);
+            }
+
+            // Sort packages
+            packages.sort_by(|a, b| {
+                let cmp = match sort_field {
+                    SortField::Name => a.name.cmp(&b.name).then_with(|| a.version.cmp(&b.version)),
+                    SortField::Version => {
+                        a.version.cmp(&b.version).then_with(|| a.name.cmp(&b.name))
+                    }
+                    SortField::Size => a.size.cmp(&b.size).then_with(|| a.name.cmp(&b.name)),
+                    SortField::Created => a
+                        .created_at
+                        .cmp(&b.created_at)
+                        .then_with(|| a.name.cmp(&b.name)),
+                    SortField::Arch => a.arch.cmp(&b.arch).then_with(|| a.name.cmp(&b.name)),
+                    SortField::Repo => a.repo.cmp(&b.repo).then_with(|| a.name.cmp(&b.name)),
+                };
+                if reverse { cmp.reverse() } else { cmp }
+            });
+
+            if json_output {
+                print_packages_json(&packages);
+            } else {
+                print_packages_table(&packages, size_unit);
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to list packages");
+            process::exit(1);
+        }
+    }
+}
+
+async fn list_packages(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> Result<Vec<Package>, Box<dyn std::error::Error>> {
+    let url = format!("{base_url}/api/packages");
+    let response = client.get(&url).send().await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Failed to list packages - HTTP {status}: {body}").into());
+    }
+
+    let packages = response.json::<Vec<Package>>().await?;
+    Ok(packages)
+}
+
+fn print_packages_json(packages: &[Package]) {
+    match serde_json::to_string_pretty(packages) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to serialize packages to JSON");
+            process::exit(1);
+        }
+    }
+}
+
+fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
+    if packages.is_empty() {
+        println!("{}", "No packages found.".yellow());
+        return;
+    }
+
+    // Calculate column widths
+    let name_width = packages
+        .iter()
+        .map(|p| p.name.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let version_width = packages
+        .iter()
+        .map(|p| p.version.len())
+        .max()
+        .unwrap_or(7)
+        .max(7);
+    let arch_width = packages
+        .iter()
+        .map(|p| p.arch.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let repo_width = packages
+        .iter()
+        .map(|p| p.repo.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+
+    // Print header
+    println!(
+        "{:name_width$}  {:version_width$}  {:arch_width$}  {:repo_width$}  {:>10}  {}",
+        "NAME".cyan().bold(),
+        "VERSION".cyan().bold(),
+        "ARCH".cyan().bold(),
+        "REPO".cyan().bold(),
+        "SIZE".cyan().bold(),
+        "CREATED".cyan().bold(),
+    );
+    println!(
+        "{}",
+        "-".repeat(name_width + version_width + arch_width + repo_width + 10 + 20 + 12)
+            .bright_black()
+    );
+
+    // Print rows
+    for pkg in packages {
+        let size_str = format_size(pkg.size, size_unit);
+        let created_str = pkg.created_at.format("%Y-%m-%d %H:%M").to_string();
+
+        println!(
+            "{:name_width$}  {:version_width$}  {:arch_width$}  {:repo_width$}  {:>10}  {}",
+            pkg.name.green(),
+            pkg.version.yellow(),
+            pkg.arch,
+            pkg.repo,
+            size_str.bright_black(),
+            created_str.bright_black(),
+        );
+    }
+
+    println!();
+    println!(
+        "{} {} package(s)",
+        "Total:".cyan().bold(),
+        packages.len().to_string().yellow()
+    );
+}
+
+fn format_size(bytes: u64, unit: SizeUnit) -> String {
+    let byte = Byte::from_u64(bytes);
+    match unit {
+        SizeUnit::Binary => format!("{:.1}", byte.get_appropriate_unit(UnitType::Binary)),
+        SizeUnit::Decimal => format!("{:.1}", byte.get_appropriate_unit(UnitType::Decimal)),
+        SizeUnit::Bytes => format!("{bytes} B"),
     }
 }
 
