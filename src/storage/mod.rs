@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
+mod cleanup;
+pub use cleanup::cleanup_old_versions;
+
 /// Validate a path component to prevent directory traversal attacks
 fn validate_path_component(component: &str) -> Result<()> {
     // Reject empty, ".", "..", or components containing path separators
@@ -350,6 +353,12 @@ impl Storage {
         // Delete metadata
         if meta_path.exists() {
             fs::remove_file(&meta_path).await.map_io_err(&meta_path)?;
+        }
+
+        // Delete signature file if present
+        let sig_path = PathBuf::from(format!("{}.sig", pkg_path.display()));
+        if sig_path.exists() {
+            fs::remove_file(&sig_path).await.map_io_err(&sig_path)?;
         }
 
         Ok(())

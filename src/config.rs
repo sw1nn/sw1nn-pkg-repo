@@ -31,6 +31,9 @@ pub struct StorageConfig {
 
     #[serde(default = "default_arch")]
     pub default_arch: String,
+
+    #[serde(default = "default_auto_cleanup_enabled")]
+    pub auto_cleanup_enabled: bool,
 }
 
 fn default_host() -> String {
@@ -55,6 +58,10 @@ fn default_repo_name() -> String {
 
 fn default_arch() -> String {
     "x86_64".to_string()
+}
+
+fn default_auto_cleanup_enabled() -> bool {
+    true
 }
 
 impl Config {
@@ -141,6 +148,7 @@ impl Config {
                 data_path,
                 default_repo: default_repo_name(),
                 default_arch: default_arch(),
+                auto_cleanup_enabled: default_auto_cleanup_enabled(),
             },
         }
     }

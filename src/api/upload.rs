@@ -388,6 +388,48 @@ pub async fn complete_upload(
     // Regenerate repository database
     regenerate_repo_db(&state.storage, &package.repo, &package.arch).await?;
 
+    // Auto-cleanup old versions if enabled
+    if state.config.storage.auto_cleanup_enabled {
+        let deleted = crate::storage::cleanup_old_versions(
+            &state.storage,
+            &package.name,
+            &package.repo,
+            &package.arch,
+        )
+        .await
+        .inspect_err(|e| {
+            tracing::error!(
+                package = %package.name,
+                repo = %package.repo,
+                arch = %package.arch,
+                error = %e,
+                "Failed to cleanup old package versions"
+            );
+        })
+        .unwrap_or_default();
+
+        if !deleted.is_empty() {
+            tracing::info!(
+                package = %package.name,
+                repo = %package.repo,
+                arch = %package.arch,
+                deleted_count = deleted.len(),
+                deleted_versions = ?deleted.iter().map(|p| &p.version).collect::<Vec<_>>(),
+                "Cleaned up old package versions"
+            );
+
+            // Regenerate DB to reflect deletions
+            if let Err(e) = regenerate_repo_db(&state.storage, &package.repo, &package.arch).await {
+                tracing::error!(
+                    repo = %package.repo,
+                    arch = %package.arch,
+                    error = %e,
+                    "Failed to regenerate repository database after cleanup"
+                );
+            }
+        }
+    }
+
     // Cleanup upload session
     if let Err(e) = state.upload_store.delete_session(&upload_id).await {
         tracing::warn!("Failed to cleanup upload session {}: {}", upload_id, e);
