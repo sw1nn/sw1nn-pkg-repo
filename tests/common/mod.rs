@@ -23,6 +23,7 @@ pub async fn setup_test_app() -> Router {
 
     let mut config = Config::default();
     config.storage.data_path = temp_path.clone();
+    config.storage.auto_cleanup_enabled = false; // Disable auto-cleanup for tests
 
     let storage = Storage::new(&config.storage.data_path);
     let upload_store = UploadSessionStore::new(temp_path);

@@ -142,7 +142,9 @@ impl Storage {
     /// If the package already exists, returns PackageAlreadyExists error.
     pub async fn store_package(&self, package: &Package, data: &[u8]) -> Result<()> {
         let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
-        let meta_path = self.metadata_path(&package.repo, &package.arch, &package.name)?;
+        // Use full filename (without .pkg.tar.zst extension) for metadata to support multiple versions
+        let metadata_filename = package.filename.trim_end_matches(".pkg.tar.zst");
+        let meta_path = self.metadata_path(&package.repo, &package.arch, metadata_filename)?;
 
         // Create directories
         if let Some(parent) = pkg_path.parent() {
@@ -198,7 +200,9 @@ impl Storage {
         source_path: &std::path::Path,
     ) -> Result<()> {
         let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
-        let meta_path = self.metadata_path(&package.repo, &package.arch, &package.name)?;
+        // Use full filename (without .pkg.tar.zst extension) for metadata to support multiple versions
+        let metadata_filename = package.filename.trim_end_matches(".pkg.tar.zst");
+        let meta_path = self.metadata_path(&package.repo, &package.arch, metadata_filename)?;
 
         // Create directories
         if let Some(parent) = pkg_path.parent() {
@@ -340,7 +344,9 @@ impl Storage {
     /// Delete a package and its metadata
     pub async fn delete_package(&self, package: &Package) -> Result<()> {
         let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
-        let meta_path = self.metadata_path(&package.repo, &package.arch, &package.name)?;
+        // Use full filename (without .pkg.tar.zst extension) for metadata to support multiple versions
+        let metadata_filename = package.filename.trim_end_matches(".pkg.tar.zst");
+        let meta_path = self.metadata_path(&package.repo, &package.arch, metadata_filename)?;
 
         // Delete package file
         if pkg_path.exists() {

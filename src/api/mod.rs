@@ -1,3 +1,4 @@
+pub mod cleanup_policy;
 pub mod delete_versions;
 mod upload;
 
@@ -169,7 +170,11 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
             upload::CompleteUploadRequest,
             upload::ChunkInfo,
             upload::AbortUploadResponse,
-            delete_versions::DeleteVersionsRequest
+            delete_versions::DeleteVersionsRequest,
+            delete_versions::DeleteVersionsResponse,
+            cleanup_policy::CleanupPolicyRequest,
+            cleanup_policy::CleanupPolicyResponse,
+            cleanup_policy::PackageCleanupDetail
         )
     ),
     tags(
@@ -181,10 +186,16 @@ pub struct ApiDoc;
 
 /// Create the API router with all routes
 pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
+    use axum::routing::post;
+
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(list_packages))
         .routes(routes!(delete_package))
-        .routes(routes!(delete_versions::delete_versions))
+        .route(
+            "/packages/:name/versions/delete",
+            post(delete_versions::delete_versions),
+        )
+        .routes(routes!(cleanup_policy::apply_cleanup_policy))
         .routes(routes!(upload::initiate_upload))
         .routes(routes!(upload::upload_chunk))
         .routes(routes!(upload::upload_signature))
