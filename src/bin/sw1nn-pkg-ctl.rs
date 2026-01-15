@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -13,15 +13,44 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use sw1nn_pkg_repo::models::Package;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const BIN_NAME: &str = env!("CARGO_BIN_NAME");
 const DEFAULT_CHUNK_SIZE: usize = 1024 * 1024; // 1 MiB
 
 #[derive(Parser, Debug)]
-#[command(name = "sw1nn-pkg-upload")]
-#[command(about = "Upload packages to sw1nn package repository", long_about = None)]
+#[command(name = BIN_NAME)]
+#[command(about = "Upload and manage packages in sw1nn package repository", long_about = None)]
 #[command(version = VERSION)]
 struct Args {
-    /// Path(s) to package file(s) (.pkg.tar.zst)
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Path(s) to package file(s) (.pkg.tar.zst) - for backwards compatibility
+    #[arg(trailing_var_arg = true)]
     package_files: Vec<String>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Upload package(s) to the repository
+    Upload {
+        /// Path(s) to package file(s) (.pkg.tar.zst)
+        package_files: Vec<String>,
+    },
+    /// Delete package version(s) from the repository
+    Delete {
+        /// Package name
+        #[arg(short, long)]
+        name: String,
+        /// Version(s) to delete - can be exact (1.0.0-1) or semver ranges (^1.0.0)
+        #[arg(short, long, required = true)]
+        version: Vec<String>,
+        /// Repository name (optional)
+        #[arg(short, long)]
+        repo: Option<String>,
+        /// Architecture (optional)
+        #[arg(short, long)]
+        arch: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -63,36 +92,79 @@ struct ChunkInfo {
     checksum: String,
 }
 
+#[derive(Debug, Serialize)]
+struct DeleteVersionsRequest {
+    versions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arch: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteVersionsResponse {
+    deleted_count: usize,
+    deleted_versions: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "sw1nn_pkg_upload=info".into()),
+                .unwrap_or_else(|_| format!("{BIN_NAME}=info").into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("sw1nn-pkg-upload version {}", VERSION);
+    tracing::info!("{BIN_NAME} version {VERSION}");
 
     let args = Args::parse();
-
-    if args.package_files.is_empty() {
-        tracing::error!("No package files specified");
-        process::exit(1);
-    }
 
     let base_url =
         std::env::var("SW1NN_REPO_URL").unwrap_or_else(|_| "https://repo.sw1nn.net".to_string());
 
     let client = reqwest::Client::new();
-    let total_files = args.package_files.len();
+
+    // Handle subcommands or backwards-compatible positional args
+    match args.command {
+        Some(Commands::Upload { package_files }) => {
+            run_upload(&client, &base_url, package_files).await;
+        }
+        Some(Commands::Delete {
+            name,
+            version,
+            repo,
+            arch,
+        }) => {
+            run_delete(&client, &base_url, name, version, repo, arch).await;
+        }
+        None => {
+            // Backwards compatibility: treat positional args as upload
+            if args.package_files.is_empty() {
+                tracing::error!(
+                    "No command specified. Use 'upload' or 'delete' subcommand, or provide package files directly."
+                );
+                process::exit(1);
+            }
+            run_upload(&client, &base_url, args.package_files).await;
+        }
+    }
+}
+
+async fn run_upload(client: &reqwest::Client, base_url: &str, package_files: Vec<String>) {
+    if package_files.is_empty() {
+        tracing::error!("No package files specified");
+        process::exit(1);
+    }
+
+    let total_files = package_files.len();
     let mut successful_uploads = 0;
     let mut failed_uploads = 0;
 
-    tracing::info!("Uploading {} package(s) to {}", total_files, base_url);
+    tracing::info!("Uploading {total_files} package(s) to {base_url}");
 
-    for (index, pkg_file) in args.package_files.iter().enumerate() {
+    for (index, pkg_file) in package_files.iter().enumerate() {
         let path = Path::new(pkg_file);
 
         if !path.exists() {
@@ -120,11 +192,11 @@ async fn main() {
         tracing::info!("[{}/{}] Uploading {}", index + 1, total_files, pkg_file);
 
         // Always use chunked upload
-        let result = upload_chunked(&client, &base_url, path, index + 1, total_files).await;
+        let result = upload_chunked(client, base_url, path, index + 1, total_files).await;
 
         match result {
             Ok(package) => {
-                print_success(&package, index + 1, total_files);
+                print_upload_success(&package, index + 1, total_files);
                 successful_uploads += 1;
             }
             Err(e) => {
@@ -137,7 +209,7 @@ async fn main() {
     println!("\n{}", "=".repeat(50));
     println!("{}", "Upload Summary".bold());
     println!("{}", "=".repeat(50));
-    println!("  Total files:       {}", total_files);
+    println!("  Total files:       {total_files}");
     println!(
         "  Successful:        {}",
         successful_uploads.to_string().green()
@@ -148,6 +220,33 @@ async fn main() {
 
     if failed_uploads > 0 {
         process::exit(1);
+    }
+}
+
+async fn run_delete(
+    client: &reqwest::Client,
+    base_url: &str,
+    name: String,
+    versions: Vec<String>,
+    repo: Option<String>,
+    arch: Option<String>,
+) {
+    tracing::info!(
+        package = %name,
+        versions = ?versions,
+        "Deleting package version(s) from {base_url}"
+    );
+
+    let result = delete_versions(client, base_url, &name, versions, repo, arch).await;
+
+    match result {
+        Ok(response) => {
+            print_delete_success(&name, &response);
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Delete failed");
+            process::exit(1);
+        }
     }
 }
 
@@ -364,8 +463,65 @@ async fn upload_chunk_with_retry(
     }
 }
 
+/// Delete package versions from the repository
+async fn delete_versions(
+    client: &reqwest::Client,
+    base_url: &str,
+    name: &str,
+    versions: Vec<String>,
+    repo: Option<String>,
+    arch: Option<String>,
+) -> Result<DeleteVersionsResponse, Box<dyn std::error::Error>> {
+    let url = format!("{base_url}/api/packages/{name}/versions/delete");
+
+    let request = DeleteVersionsRequest {
+        versions,
+        repo,
+        arch,
+    };
+
+    let response = client.post(&url).json(&request).send().await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Failed to delete versions - HTTP {status}: {body}").into());
+    }
+
+    let delete_response = response.json::<DeleteVersionsResponse>().await?;
+    Ok(delete_response)
+}
+
+/// Print success message for deleted versions
+fn print_delete_success(name: &str, response: &DeleteVersionsResponse) {
+    println!(
+        "\n{}",
+        format!(
+            "✓ Successfully deleted {} version(s)",
+            response.deleted_count
+        )
+        .green()
+        .bold()
+    );
+    println!();
+    println!("  {:>9}  {}", "Package:".cyan().bold(), name);
+    println!(
+        "  {:>9}  {}",
+        "Deleted:".cyan().bold(),
+        response.deleted_count.to_string().yellow()
+    );
+
+    if !response.deleted_versions.is_empty() {
+        println!("  {:>9}", "Versions:".cyan().bold());
+        for version in &response.deleted_versions {
+            println!("    - {}", version);
+        }
+    }
+    println!();
+}
+
 /// Print success message for uploaded package
-fn print_success(package: &Package, index: usize, total: usize) {
+fn print_upload_success(package: &Package, index: usize, total: usize) {
     println!(
         "\n{}",
         format!("[{}/{}] ✓ Package uploaded successfully", index, total)
