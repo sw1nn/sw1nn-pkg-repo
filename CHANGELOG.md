@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.0.1 - 2026-01-15
+#### Bug Fixes
+- (**packaging**) add replaces/conflicts for sw1nn-pkg-upload - (fad8e80) - Neale Swinnerton
+
+- - -
+
 ## v2.0.0 - 2026-01-15
 #### Refactoring
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**bin**) rename sw1nn-pkg-upload to sw1nn-pkg-ctl - (555610b) - Neale Swinnerton
