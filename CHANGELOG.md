@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.1.0 - 2026-01-15
+#### Features
+- (**cli**) add list command with filtering, sorting and color options - (ce76994) - Neale Swinnerton
+
+- - -
+
 ## v2.0.1 - 2026-01-15
 #### Bug Fixes
 - (**packaging**) add replaces/conflicts for sw1nn-pkg-upload - (fad8e80) - Neale Swinnerton
