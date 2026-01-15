@@ -1,6 +1,6 @@
 # Maintainer: Neale Swinnerton <neale@sw1nn.com>
 pkgbase=sw1nn-pkg-repo
-pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-upload')
+pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-ctl')
 pkgver=2.0.0
 pkgrel=1
 arch=('x86_64')
@@ -48,14 +48,14 @@ package_sw1nn-pkg-repo() {
   install -dm755 "$pkgdir/var/lib/sw1nn-pkg-repo/data"
 }
 
-package_sw1nn-pkg-upload() {
+package_sw1nn-pkg-ctl() {
   pkgdesc="Upload client for sw1nn-pkg-repo package repository"
   depends=('zstd')
 
   cd "$srcdir/$pkgbase"
 
   # Install binary
-  install -Dm755 "target/release/sw1nn-pkg-upload" "$pkgdir/usr/bin/sw1nn-pkg-upload"
+  install -Dm755 "target/release/sw1nn-pkg-ctl" "$pkgdir/usr/bin/sw1nn-pkg-ctl"
 
   # Install documentation
   install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
