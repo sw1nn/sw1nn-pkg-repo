@@ -2,7 +2,7 @@ use crate::api::{AppState, regenerate_repo_db};
 use crate::error::{Error, Result, ResultIoExt};
 use crate::metadata::{calculate_sha256, extract_pkginfo};
 use crate::models::Package;
-use crate::upload::{DEFAULT_CHUNK_SIZE, DEFAULT_SESSION_EXPIRATION_SECS, UploadSession};
+use crate::upload::{DEFAULT_CHUNK_SIZE, UploadSession};
 use axum::{
     Json,
     body::Bytes,
@@ -159,16 +159,19 @@ pub async fn initiate_upload(
     }
 
     // Create upload session
-    let session = UploadSession::new(
-        req.filename,
-        req.size,
-        req.sha256,
-        repo,
-        arch,
-        chunk_size,
-        req.has_signature,
-        DEFAULT_SESSION_EXPIRATION_SECS,
-    );
+    let mut builder = UploadSession::builder()
+        .filename(req.filename)
+        .file_size(req.size)
+        .repo(repo)
+        .arch(arch)
+        .chunk_size(chunk_size)
+        .has_signature(req.has_signature);
+
+    if let Some(sha256) = req.sha256 {
+        builder = builder.sha256(sha256);
+    }
+
+    let session = builder.build();
 
     let response = InitiateUploadResponse {
         upload_id: session.upload_id.clone(),

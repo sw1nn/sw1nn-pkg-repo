@@ -3,6 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::HashSet;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
@@ -35,34 +36,9 @@ pub struct UploadSession {
 }
 
 impl UploadSession {
-    pub fn new(
-        filename: String,
-        file_size: u64,
-        sha256: Option<String>,
-        repo: String,
-        arch: String,
-        chunk_size: usize,
-        has_signature: bool,
-        expiration_secs: i64,
-    ) -> Self {
-        let total_chunks = ((file_size as f64) / (chunk_size as f64)).ceil() as u32;
-        let now = Utc::now();
-        let expires_at = now + Duration::seconds(expiration_secs);
-
-        Self {
-            upload_id: Uuid::new_v4().to_string(),
-            filename,
-            file_size,
-            sha256,
-            repo,
-            arch,
-            chunk_size,
-            total_chunks,
-            has_signature,
-            created_at: now,
-            expires_at,
-            uploaded_chunks: HashSet::new(),
-        }
+    /// Create a new builder for UploadSession
+    pub fn builder() -> UploadSessionBuilder<NoFilename, NoFileSize, NoRepo, NoArch> {
+        UploadSessionBuilder::new()
     }
 
     pub fn is_expired(&self) -> bool {
@@ -78,6 +54,191 @@ impl UploadSession {
         (1..=self.total_chunks)
             .filter(|n| !self.uploaded_chunks.contains(n))
             .collect()
+    }
+}
+
+// Typestate marker types for required fields
+#[derive(Debug, Default)]
+pub struct NoFilename;
+#[derive(Debug, Default)]
+pub struct HasFilename;
+
+#[derive(Debug, Default)]
+pub struct NoFileSize;
+#[derive(Debug, Default)]
+pub struct HasFileSize;
+
+#[derive(Debug, Default)]
+pub struct NoRepo;
+#[derive(Debug, Default)]
+pub struct HasRepo;
+
+#[derive(Debug, Default)]
+pub struct NoArch;
+#[derive(Debug, Default)]
+pub struct HasArch;
+
+/// Typestate builder for UploadSession
+///
+/// This builder uses phantom types to enforce at compile time that all required
+/// fields (filename, file_size, repo, arch) are set before building.
+#[derive(Debug)]
+pub struct UploadSessionBuilder<F, S, R, A> {
+    filename: Option<String>,
+    file_size: Option<u64>,
+    sha256: Option<String>,
+    repo: Option<String>,
+    arch: Option<String>,
+    chunk_size: usize,
+    has_signature: bool,
+    expiration_secs: i64,
+    _marker: PhantomData<(F, S, R, A)>,
+}
+
+impl Default for UploadSessionBuilder<NoFilename, NoFileSize, NoRepo, NoArch> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UploadSessionBuilder<NoFilename, NoFileSize, NoRepo, NoArch> {
+    pub fn new() -> Self {
+        Self {
+            filename: None,
+            file_size: None,
+            sha256: None,
+            repo: None,
+            arch: None,
+            chunk_size: DEFAULT_CHUNK_SIZE,
+            has_signature: false,
+            expiration_secs: DEFAULT_SESSION_EXPIRATION_SECS,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, S, R, A> UploadSessionBuilder<F, S, R, A> {
+    /// Set the filename (required)
+    pub fn filename<T>(self, filename: T) -> UploadSessionBuilder<HasFilename, S, R, A>
+    where
+        T: Into<String>,
+    {
+        UploadSessionBuilder {
+            filename: Some(filename.into()),
+            file_size: self.file_size,
+            sha256: self.sha256,
+            repo: self.repo,
+            arch: self.arch,
+            chunk_size: self.chunk_size,
+            has_signature: self.has_signature,
+            expiration_secs: self.expiration_secs,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the file size (required)
+    pub fn file_size(self, size: u64) -> UploadSessionBuilder<F, HasFileSize, R, A> {
+        UploadSessionBuilder {
+            filename: self.filename,
+            file_size: Some(size),
+            sha256: self.sha256,
+            repo: self.repo,
+            arch: self.arch,
+            chunk_size: self.chunk_size,
+            has_signature: self.has_signature,
+            expiration_secs: self.expiration_secs,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the repository (required)
+    pub fn repo<T>(self, repo: T) -> UploadSessionBuilder<F, S, HasRepo, A>
+    where
+        T: Into<String>,
+    {
+        UploadSessionBuilder {
+            filename: self.filename,
+            file_size: self.file_size,
+            sha256: self.sha256,
+            repo: Some(repo.into()),
+            arch: self.arch,
+            chunk_size: self.chunk_size,
+            has_signature: self.has_signature,
+            expiration_secs: self.expiration_secs,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the architecture (required)
+    pub fn arch<T>(self, arch: T) -> UploadSessionBuilder<F, S, R, HasArch>
+    where
+        T: Into<String>,
+    {
+        UploadSessionBuilder {
+            filename: self.filename,
+            file_size: self.file_size,
+            sha256: self.sha256,
+            repo: self.repo,
+            arch: Some(arch.into()),
+            chunk_size: self.chunk_size,
+            has_signature: self.has_signature,
+            expiration_secs: self.expiration_secs,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the SHA256 hash (optional)
+    pub fn sha256<T>(mut self, sha256: T) -> Self
+    where
+        T: Into<String>,
+    {
+        self.sha256 = Some(sha256.into());
+        self
+    }
+
+    /// Set the chunk size (optional, defaults to DEFAULT_CHUNK_SIZE)
+    pub fn chunk_size(mut self, size: usize) -> Self {
+        self.chunk_size = size;
+        self
+    }
+
+    /// Set whether a signature will be uploaded (optional, defaults to false)
+    pub fn has_signature(mut self, has_sig: bool) -> Self {
+        self.has_signature = has_sig;
+        self
+    }
+
+    /// Set the session expiration time in seconds (optional, defaults to DEFAULT_SESSION_EXPIRATION_SECS)
+    pub fn expiration_secs(mut self, secs: i64) -> Self {
+        self.expiration_secs = secs;
+        self
+    }
+}
+
+impl UploadSessionBuilder<HasFilename, HasFileSize, HasRepo, HasArch> {
+    /// Build the UploadSession
+    ///
+    /// This method is only available when all required fields have been set.
+    pub fn build(self) -> UploadSession {
+        let file_size = self.file_size.expect("file_size is required");
+        let total_chunks = ((file_size as f64) / (self.chunk_size as f64)).ceil() as u32;
+        let now = Utc::now();
+        let expires_at = now + Duration::seconds(self.expiration_secs);
+
+        UploadSession {
+            upload_id: Uuid::new_v4().to_string(),
+            filename: self.filename.expect("filename is required"),
+            file_size,
+            sha256: self.sha256,
+            repo: self.repo.expect("repo is required"),
+            arch: self.arch.expect("arch is required"),
+            chunk_size: self.chunk_size,
+            total_chunks,
+            has_signature: self.has_signature,
+            created_at: now,
+            expires_at,
+            uploaded_chunks: HashSet::new(),
+        }
     }
 }
 
