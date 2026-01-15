@@ -1,6 +1,13 @@
 # Changelog
 
 - - -
+## v1.6.0 - 2026-01-15
+#### Features
+- (**api**) add endpoint to delete package versions - (87224b1) - Neale Swinnerton
+- (**storage**) add automatic package version cleanup - (8d8dc59) - Neale Swinnerton
+
+- - -
+
 ## v1.5.1 - 2025-12-15
 #### Bug Fixes
 - (**error**) add path context to all IO error conversions - (f2f17b0) - Neale Swinnerton

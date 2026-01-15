@@ -2263,7 +2263,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw1nn-pkg-repo"
-version = "1.5.1"
+version = "1.6.0"
 dependencies = [
  "alpm-types",
  "axum",
