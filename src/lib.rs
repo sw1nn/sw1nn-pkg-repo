@@ -67,6 +67,9 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Spawn actor task
     tokio::spawn(db_actor.run());
 
+    // Rebuild all repository databases on startup
+    rebuild_all_databases(&storage, &db_update_handle).await;
+
     // Create shared state
     let state = Arc::new(AppState {
         storage,
@@ -136,4 +139,26 @@ async fn shutdown_signal(db_update: DbUpdateHandle) {
 
     tracing::info!("Shutdown signal received, flushing pending database updates");
     db_update.shutdown().await;
+}
+
+/// Rebuild all repository databases on startup
+async fn rebuild_all_databases(storage: &Arc<Storage>, db_update: &DbUpdateHandle) {
+    tracing::info!("Rebuilding all repository databases on startup");
+
+    match storage.list_repo_archs().await {
+        Ok(repo_archs) => {
+            if repo_archs.is_empty() {
+                tracing::info!("No repositories found, skipping database rebuild");
+                return;
+            }
+
+            for (repo, arch) in repo_archs {
+                tracing::info!(repo = %repo, arch = %arch, "Rebuilding database");
+                db_update.force_rebuild(&repo, &arch).await;
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to list repositories for startup rebuild");
+        }
+    }
 }

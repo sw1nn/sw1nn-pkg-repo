@@ -35,6 +35,8 @@ impl RepoArchKey {
 pub enum DbUpdateMessage {
     /// Request a database update for the given repo/arch
     RequestUpdate(RepoArchKey),
+    /// Force an immediate database rebuild (bypass debounce)
+    ForceRebuild(RepoArchKey),
     /// Shutdown the actor gracefully
     Shutdown,
 }
@@ -56,6 +58,19 @@ impl DbUpdateHandle {
         let key = RepoArchKey::new(repo, arch);
         if let Err(e) = self.tx.send(DbUpdateMessage::RequestUpdate(key)).await {
             tracing::error!(error = %e, "Failed to send database update request");
+        }
+    }
+
+    /// Force an immediate database rebuild, bypassing the debounce.
+    /// This is fire-and-forget - the rebuild will happen as soon as possible.
+    pub async fn force_rebuild<R, A>(&self, repo: R, arch: A)
+    where
+        R: Into<String>,
+        A: Into<String>,
+    {
+        let key = RepoArchKey::new(repo, arch);
+        if let Err(e) = self.tx.send(DbUpdateMessage::ForceRebuild(key)).await {
+            tracing::error!(error = %e, "Failed to send force rebuild request");
         }
     }
 
@@ -132,6 +147,9 @@ impl DbUpdateActor {
                         Some(DbUpdateMessage::RequestUpdate(key)) => {
                             self.handle_request(key);
                         }
+                        Some(DbUpdateMessage::ForceRebuild(key)) => {
+                            self.handle_force_rebuild(key).await;
+                        }
                         Some(DbUpdateMessage::Shutdown) => {
                             tracing::info!("Database update actor received shutdown signal");
                             self.flush_all_pending().await;
@@ -179,6 +197,20 @@ impl DbUpdateActor {
                     last_requested: now,
                 }
             });
+    }
+
+    /// Handle a force rebuild request - bypass debounce and rebuild immediately
+    async fn handle_force_rebuild(&mut self, key: RepoArchKey) {
+        // Remove any pending update for this key (we're rebuilding now)
+        self.pending.remove(&key);
+
+        tracing::info!(
+            repo = %key.repo,
+            arch = %key.arch,
+            "Force rebuilding database"
+        );
+
+        self.regenerate_db(&key).await;
     }
 
     /// Calculate the next timeout duration

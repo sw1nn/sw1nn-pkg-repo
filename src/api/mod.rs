@@ -119,6 +119,32 @@ pub async fn delete_package(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Force rebuild of repository database
+#[utoipa::path(
+    post,
+    path = "/repos/{repo}/os/{arch}/rebuild",
+    params(
+        ("repo" = String, Path, description = "Repository name"),
+        ("arch" = String, Path, description = "Architecture")
+    ),
+    responses(
+        (status = 202, description = "Database rebuild initiated"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "packages"
+)]
+pub async fn rebuild_db(
+    State(state): State<Arc<AppState>>,
+    AxumPath((repo, arch)): AxumPath<(String, String)>,
+) -> Result<impl IntoResponse> {
+    tracing::info!(repo = %repo, arch = %arch, "Force rebuild requested via API");
+
+    // Force immediate rebuild (bypass debounce)
+    state.db_update.force_rebuild(&repo, &arch).await;
+
+    Ok(StatusCode::ACCEPTED)
+}
+
 /// Regenerate repository database for a given repo/arch
 pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result<()> {
     let packages = storage.list_packages(repo, arch).await?;
@@ -193,6 +219,7 @@ pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(list_packages))
         .routes(routes!(delete_package))
+        .routes(routes!(rebuild_db))
         .route(
             "/packages/:name/versions/delete",
             post(delete_versions::delete_versions),

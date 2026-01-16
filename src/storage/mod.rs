@@ -341,6 +341,58 @@ impl Storage {
         Ok(all_packages)
     }
 
+    /// List all repo/arch combinations that exist in storage
+    pub async fn list_repo_archs(&self) -> Result<Vec<(String, String)>> {
+        let mut repo_archs = Vec::new();
+
+        // Check if base path exists
+        if !self.base_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        // Iterate through all repos
+        let mut repo_entries = fs::read_dir(&self.base_path)
+            .await
+            .map_io_err(&self.base_path)?;
+        while let Some(repo_entry) = repo_entries
+            .next_entry()
+            .await
+            .map_io_err(&self.base_path)?
+        {
+            if !repo_entry.path().is_dir() {
+                continue;
+            }
+
+            let repo_name = repo_entry
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+
+            let os_dir = repo_entry.path().join("os");
+
+            if !os_dir.exists() {
+                continue;
+            }
+
+            // Iterate through all architectures
+            let mut arch_entries = fs::read_dir(&os_dir).await.map_io_err(&os_dir)?;
+            while let Some(arch_entry) = arch_entries.next_entry().await.map_io_err(&os_dir)? {
+                if !arch_entry.path().is_dir() {
+                    continue;
+                }
+
+                let arch_name = arch_entry
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned();
+
+                repo_archs.push((repo_name.clone(), arch_name));
+            }
+        }
+
+        Ok(repo_archs)
+    }
+
     /// Delete a package and its metadata
     pub async fn delete_package(&self, package: &Package) -> Result<()> {
         let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
