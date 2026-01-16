@@ -363,10 +363,7 @@ impl Storage {
                 continue;
             }
 
-            let repo_name = repo_entry
-                .file_name()
-                .to_string_lossy()
-                .into_owned();
+            let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
 
             let os_dir = repo_entry.path().join("os");
 
@@ -381,10 +378,7 @@ impl Storage {
                     continue;
                 }
 
-                let arch_name = arch_entry
-                    .file_name()
-                    .to_string_lossy()
-                    .into_owned();
+                let arch_name = arch_entry.file_name().to_string_lossy().into_owned();
 
                 repo_archs.push((repo_name.clone(), arch_name));
             }
