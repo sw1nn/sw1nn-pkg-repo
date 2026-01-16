@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v2.2.1 - 2026-01-16
+#### Bug Fixes
+- (**db**) serialize and coalesce repository database updates - (e1c9101) - Neale Swinnerton
+#### Style
+- format db_actor.rs - (e8fd230) - Neale Swinnerton
+
+- - -
+
 ## v2.2.0 - 2026-01-15
 #### Features
 - (**cli**) color pkgrel grey and use fixed-width version column - (169c479) - Neale Swinnerton
