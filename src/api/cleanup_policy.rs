@@ -1,5 +1,4 @@
 use crate::AppState;
-use crate::api::regenerate_repo_db;
 use crate::error::Result;
 use crate::models::Package;
 use axum::{Json, extract::State, response::IntoResponse};
@@ -127,9 +126,9 @@ pub async fn apply_cleanup_policy(
         }
     }
 
-    // Regenerate repository database once after all deletions
+    // Request database update (debounced, coalesced with other updates)
     if total_deleted > 0 {
-        regenerate_repo_db(&state.storage, &repo, &arch).await?;
+        state.db_update.request_update(&repo, &arch).await;
     }
 
     let response = CleanupPolicyResponse {

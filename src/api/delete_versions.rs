@@ -1,5 +1,4 @@
 use crate::AppState;
-use crate::api::regenerate_repo_db;
 use crate::error::{Error, Result};
 use crate::models::Package;
 use axum::{
@@ -164,8 +163,8 @@ pub async fn delete_versions(
         );
     }
 
-    // Regenerate repository database
-    regenerate_repo_db(&state.storage, &repo, &arch).await?;
+    // Request database update (debounced, coalesced with other updates)
+    state.db_update.request_update(&repo, &arch).await;
 
     tracing::info!(
         package = %name,

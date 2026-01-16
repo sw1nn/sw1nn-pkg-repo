@@ -3,6 +3,7 @@ pub mod delete_versions;
 mod upload;
 
 use crate::config::Config;
+use crate::db_actor::DbUpdateHandle;
 use crate::error::{Result, ResultIoExt};
 use crate::metadata::{extract_pkginfo, generate_files_db, generate_repo_db};
 use crate::models::{Package, PackageQuery};
@@ -20,9 +21,10 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 pub struct AppState {
-    pub storage: Storage,
+    pub storage: Arc<Storage>,
     pub config: Config,
     pub upload_store: UploadSessionStore,
+    pub db_update: DbUpdateHandle,
 }
 
 /// List packages with optional filtering
@@ -111,8 +113,8 @@ pub async fn delete_package(
     // Delete package
     state.storage.delete_package(&package).await?;
 
-    // Regenerate repository database
-    regenerate_repo_db(&state.storage, &repo, &arch).await?;
+    // Request database update (debounced, coalesced)
+    state.db_update.request_update(&repo, &arch).await;
 
     Ok(StatusCode::NO_CONTENT)
 }

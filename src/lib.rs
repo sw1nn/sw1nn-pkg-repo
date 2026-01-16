@@ -1,5 +1,6 @@
 pub mod api;
 pub mod config;
+pub mod db_actor;
 pub mod error;
 pub mod metadata;
 pub mod models;
@@ -10,6 +11,7 @@ pub mod upload;
 use api::{AppState, create_api_router};
 use axum::{Router, routing::get};
 use config::Config;
+use db_actor::{DbUpdateActor, DbUpdateHandle};
 use repo::serve_file;
 use std::io::IsTerminal;
 use std::sync::Arc;
@@ -53,17 +55,24 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
 
     tracing::info!("Starting server with config: {:?}", config);
 
-    // Create storage
-    let storage = Storage::new(&config.storage.data_path);
+    // Create storage (wrapped in Arc for sharing with actor)
+    let storage = Arc::new(Storage::new(&config.storage.data_path));
 
     // Create upload session store
     let upload_store = upload::UploadSessionStore::new(config.storage.data_path.clone());
+
+    // Create database update actor
+    let (db_actor, db_update_handle) = DbUpdateActor::new(Arc::clone(&storage));
+
+    // Spawn actor task
+    tokio::spawn(db_actor.run());
 
     // Create shared state
     let state = Arc::new(AppState {
         storage,
         config: config.clone(),
         upload_store,
+        db_update: db_update_handle,
     });
 
     // Build API routes using utoipa_axum router
@@ -93,7 +102,38 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     tracing::info!("Server listening on {}", addr);
     tracing::info!("API documentation available at http://{}/api-docs", addr);
 
-    axum::serve(listener, app).await?;
+    // Run server with graceful shutdown
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(state.db_update.clone()))
+        .await?;
 
     Ok(())
+}
+
+/// Wait for shutdown signal and notify the db actor
+async fn shutdown_signal(db_update: DbUpdateHandle) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("Shutdown signal received, flushing pending database updates");
+    db_update.shutdown().await;
 }

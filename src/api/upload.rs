@@ -1,4 +1,4 @@
-use crate::api::{AppState, regenerate_repo_db};
+use crate::api::AppState;
 use crate::error::{Error, Result, ResultIoExt};
 use crate::metadata::{calculate_sha256, extract_pkginfo};
 use crate::models::Package;
@@ -388,9 +388,6 @@ pub async fn complete_upload(
         }
     }
 
-    // Regenerate repository database
-    regenerate_repo_db(&state.storage, &package.repo, &package.arch).await?;
-
     // Auto-cleanup old versions if enabled
     if state.config.storage.auto_cleanup_enabled {
         let deleted = crate::storage::cleanup_old_versions(
@@ -420,18 +417,14 @@ pub async fn complete_upload(
                 deleted_versions = ?deleted.iter().map(|p| &p.version).collect::<Vec<_>>(),
                 "Cleaned up old package versions"
             );
-
-            // Regenerate DB to reflect deletions
-            if let Err(e) = regenerate_repo_db(&state.storage, &package.repo, &package.arch).await {
-                tracing::error!(
-                    repo = %package.repo,
-                    arch = %package.arch,
-                    error = %e,
-                    "Failed to regenerate repository database after cleanup"
-                );
-            }
         }
     }
+
+    // Request database update (debounced, coalesced with other updates)
+    state
+        .db_update
+        .request_update(&package.repo, &package.arch)
+        .await;
 
     // Cleanup upload session
     if let Err(e) = state.upload_store.delete_session(&upload_id).await {

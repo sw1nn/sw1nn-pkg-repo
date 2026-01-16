@@ -1,8 +1,10 @@
 use axum::Router;
 use std::io::Write;
 use std::sync::Arc;
+use std::time::Duration;
 use sw1nn_pkg_repo::api::{AppState, create_api_router};
 use sw1nn_pkg_repo::config::Config;
+use sw1nn_pkg_repo::db_actor::DbUpdateActor;
 use sw1nn_pkg_repo::repo::serve_file;
 use sw1nn_pkg_repo::storage::Storage;
 use sw1nn_pkg_repo::upload::UploadSessionStore;
@@ -25,13 +27,21 @@ pub async fn setup_test_app() -> Router {
     config.storage.data_path = temp_path.clone();
     config.storage.auto_cleanup_enabled = false; // Disable auto-cleanup for tests
 
-    let storage = Storage::new(&config.storage.data_path);
+    let storage = Arc::new(Storage::new(&config.storage.data_path));
     let upload_store = UploadSessionStore::new(temp_path);
+
+    // Create database update actor with short debounce for tests
+    let (db_actor, db_update_handle) =
+        DbUpdateActor::with_debounce(Arc::clone(&storage), Duration::from_millis(100));
+
+    // Spawn actor task (will run for duration of test)
+    tokio::spawn(db_actor.run());
 
     let state = Arc::new(AppState {
         storage,
         config: config.clone(),
         upload_store,
+        db_update: db_update_handle,
     });
 
     // Build API routes
