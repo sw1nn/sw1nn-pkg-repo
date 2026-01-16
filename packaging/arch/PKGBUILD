@@ -1,7 +1,7 @@
 # Maintainer: Neale Swinnerton <neale@sw1nn.com>
 pkgbase=sw1nn-pkg-repo
 pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-ctl')
-pkgver=2.2.1
+pkgver=2.3.0
 pkgrel=1
 arch=('x86_64')
 url="https://github.com/sw1nn/sw1nn-pkg-repo"

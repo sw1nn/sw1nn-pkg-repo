@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v2.3.0 - 2026-01-16
+#### Features
+- (**db**) rebuild all repository databases on server startup - (8ec4f45) - Neale Swinnerton
+#### Style
+- format storage/mod.rs - (88a0da3) - Neale Swinnerton
+
+- - -
+
 ## v2.2.1 - 2026-01-16
 #### Bug Fixes
 - (**db**) serialize and coalesce repository database updates - (e1c9101) - Neale Swinnerton
