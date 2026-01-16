@@ -96,7 +96,10 @@ impl DbUpdateActor {
     }
 
     /// Create with custom debounce duration (useful for testing)
-    pub fn with_debounce(storage: Arc<Storage>, debounce_duration: Duration) -> (Self, DbUpdateHandle) {
+    pub fn with_debounce(
+        storage: Arc<Storage>,
+        debounce_duration: Duration,
+    ) -> (Self, DbUpdateHandle) {
         let (tx, rx) = mpsc::channel(Self::CHANNEL_CAPACITY);
 
         let actor = Self {
@@ -206,7 +209,9 @@ impl DbUpdateActor {
         let ready_keys: Vec<RepoArchKey> = self
             .pending
             .iter()
-            .filter(|(_, pending)| now.duration_since(pending.last_requested) >= self.debounce_duration)
+            .filter(|(_, pending)| {
+                now.duration_since(pending.last_requested) >= self.debounce_duration
+            })
             .map(|(key, _)| key.clone())
             .collect();
 
