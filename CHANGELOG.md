@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v2.3.1 - 2026-01-21
+#### Bug Fixes
+- (**db**) include only latest version of each package in database - (cc26cef) - Neale Swinnerton
+#### Style
+- format mod.rs - (fab743d) - Neale Swinnerton
+
+- - -
+
 ## v2.3.0 - 2026-01-16
 #### Features
 - (**db**) rebuild all repository databases on server startup - (8ec4f45) - Neale Swinnerton
