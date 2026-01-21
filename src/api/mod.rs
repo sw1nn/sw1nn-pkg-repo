@@ -234,11 +234,10 @@ fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
     };
 
     match (parse(v1), parse(v2)) {
-        (Some((e1, sv1, pr1)), Some((e2, sv2, pr2))) => {
-            e1.cmp(&e2)
-                .then_with(|| sv1.cmp(&sv2))
-                .then_with(|| pr1.cmp(&pr2))
-        }
+        (Some((e1, sv1, pr1)), Some((e2, sv2, pr2))) => e1
+            .cmp(&e2)
+            .then_with(|| sv1.cmp(&sv2))
+            .then_with(|| pr1.cmp(&pr2)),
         // Fall back to string comparison if parsing fails
         _ => v1.cmp(v2),
     }
