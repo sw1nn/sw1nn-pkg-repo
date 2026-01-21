@@ -151,9 +151,19 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
 
     let repo_dir = storage.repo_dir(repo, arch)?;
 
+    // Group packages by name and keep only the latest version of each
+    let latest_packages = select_latest_versions(packages);
+
+    tracing::info!(
+        repo = %repo,
+        arch = %arch,
+        package_count = latest_packages.len(),
+        "Regenerating database with latest package versions"
+    );
+
     // Load pkginfo for each package
     let mut pkg_data = Vec::new();
-    for pkg in packages {
+    for pkg in latest_packages {
         let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
 
         // Read package file, skipping if missing (orphaned metadata)
@@ -183,6 +193,55 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
     generate_files_db(&repo_dir, repo, &pkg_data).await?;
 
     Ok(())
+}
+
+/// Select only the latest version of each package
+fn select_latest_versions(packages: Vec<Package>) -> Vec<Package> {
+    use std::collections::HashMap;
+
+    let mut latest_by_name: HashMap<String, Package> = HashMap::new();
+
+    for pkg in packages {
+        let dominated = latest_by_name
+            .get(&pkg.name)
+            .is_some_and(|existing| compare_versions(&existing.version, &pkg.version).is_ge());
+
+        if !dominated {
+            latest_by_name.insert(pkg.name.clone(), pkg);
+        }
+    }
+
+    latest_by_name.into_values().collect()
+}
+
+/// Compare two Arch Linux package versions
+/// Returns Ordering::Greater if v1 > v2, etc.
+fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
+    // Try to parse as semver for comparison
+    // Format: [epoch:]pkgver-pkgrel
+    let parse = |v: &str| -> Option<(u64, semver::Version, u64)> {
+        let (epoch, rest) = if let Some((e, r)) = v.split_once(':') {
+            (e.parse::<u64>().ok()?, r)
+        } else {
+            (0, v)
+        };
+
+        let (pkgver, pkgrel) = rest.rsplit_once('-')?;
+        let pkgrel_num = pkgrel.parse::<u64>().ok()?;
+        let semver_ver = semver::Version::parse(pkgver).ok()?;
+
+        Some((epoch, semver_ver, pkgrel_num))
+    };
+
+    match (parse(v1), parse(v2)) {
+        (Some((e1, sv1, pr1)), Some((e2, sv2, pr2))) => {
+            e1.cmp(&e2)
+                .then_with(|| sv1.cmp(&sv2))
+                .then_with(|| pr1.cmp(&pr2))
+        }
+        // Fall back to string comparison if parsing fails
+        _ => v1.cmp(v2),
+    }
 }
 
 #[derive(OpenApi)]
