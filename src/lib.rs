@@ -61,6 +61,9 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Create upload session store
     let upload_store = upload::UploadSessionStore::new(config.storage.data_path.clone());
 
+    // Spawn background task to clean up expired/orphaned upload sessions
+    upload::spawn_cleanup_task(upload_store.clone(), upload::DEFAULT_CLEANUP_INTERVAL_SECS);
+
     // Create database update actor
     let (db_actor, db_update_handle) = DbUpdateActor::new(Arc::clone(&storage));
 

@@ -557,10 +557,85 @@ impl UploadSessionStore {
 
         for upload_id in &expired {
             if let Err(e) = self.delete_session(upload_id).await {
-                tracing::warn!("Failed to cleanup expired session {}: {}", upload_id, e);
+                tracing::warn!(upload_id, error = %e, "Failed to cleanup expired session");
             }
         }
 
         Ok(expired)
     }
+
+    /// Purge all upload directories on disk.
+    /// Called on startup since sessions don't survive restarts.
+    pub async fn purge_all(&self) -> Result<u32> {
+        let uploads_dir = self.base_path.join(".uploads");
+
+        if !uploads_dir.exists() {
+            return Ok(0);
+        }
+
+        let mut count = 0u32;
+        let mut entries = fs::read_dir(&uploads_dir).await.map_io_err(&uploads_dir)?;
+
+        while let Some(entry) = entries.next_entry().await.map_io_err(&uploads_dir)? {
+            let path = entry.path();
+
+            if !path.is_dir() {
+                continue;
+            }
+
+            let dir_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("<invalid>");
+
+            if let Err(e) = fs::remove_dir_all(&path).await {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "Failed to remove upload directory"
+                );
+            } else {
+                tracing::debug!(upload_id = dir_name, "Removed stale upload directory");
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    }
+}
+
+/// Default cleanup interval: 1 hour
+pub const DEFAULT_CLEANUP_INTERVAL_SECS: u64 = 3600;
+
+/// Spawn a background task that periodically cleans up expired upload sessions.
+pub fn spawn_cleanup_task(store: UploadSessionStore, interval_secs: u64) {
+    tokio::spawn(async move {
+        let interval = std::time::Duration::from_secs(interval_secs);
+
+        // Purge all stale sessions on startup (sessions don't survive restarts)
+        match store.purge_all().await {
+            Ok(count) if count > 0 => {
+                tracing::info!(count, "Purged stale upload directories on startup");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to purge upload directories on startup");
+            }
+            _ => {}
+        }
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            // Clean up expired in-memory sessions
+            match store.cleanup_expired().await {
+                Ok(expired) if !expired.is_empty() => {
+                    tracing::info!(count = expired.len(), "Cleaned up expired upload sessions");
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to cleanup expired uploads");
+                }
+                _ => {}
+            }
+        }
+    });
 }
