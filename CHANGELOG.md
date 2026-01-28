@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.4.0 - 2026-01-28
+#### Refactoring
+- (**storage**) use flat directory structure for packages - (79b0f76) - Neale Swinnerton
+
+- - -
+
 ## v2.3.1 - 2026-01-21
 #### Bug Fixes
 - (**db**) include only latest version of each package in database - (cc26cef) - Neale Swinnerton
