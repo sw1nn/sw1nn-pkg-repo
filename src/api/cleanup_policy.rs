@@ -62,8 +62,8 @@ pub async fn apply_cleanup_policy(
         .arch
         .unwrap_or_else(|| state.config.storage.default_arch.clone());
 
-    // Get all packages for this repo/arch
-    let all_packages = state.storage.list_packages(&repo, &arch).await?;
+    // Get all packages for this repo/arch (includes "any" packages)
+    let all_packages = state.storage.list_packages_for_arch(&repo, &arch).await?;
 
     // Group packages by name
     let mut packages_by_name: HashMap<String, Vec<Package>> = HashMap::new();

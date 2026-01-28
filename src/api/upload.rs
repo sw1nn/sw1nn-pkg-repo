@@ -372,19 +372,13 @@ pub async fn complete_upload(
     if session.has_signature {
         if let Some(sig_data) = state.upload_store.get_signature(&upload_id).await? {
             let sig_filename = format!("{}.sig", package.filename);
-            let sig_path =
-                state
-                    .storage
-                    .package_path(&package.repo, &package.arch, &sig_filename)?;
+            let sig_path = state.storage.package_path(&package.repo, &sig_filename)?;
 
             tokio::fs::write(&sig_path, &sig_data)
                 .await
                 .map_io_err(&sig_path)?;
         } else {
-            tracing::warn!(
-                "Session indicated signature but none found for upload {}",
-                upload_id
-            );
+            tracing::warn!(upload_id, "Session indicated signature but none found");
         }
     }
 
@@ -421,9 +415,15 @@ pub async fn complete_upload(
     }
 
     // Request database update (debounced, coalesced with other updates)
+    // For "any" arch packages, update the default arch database
+    let update_arch = if package.arch == "any" {
+        &state.config.storage.default_arch
+    } else {
+        &package.arch
+    };
     state
         .db_update
-        .request_update(&package.repo, &package.arch)
+        .request_update(&package.repo, update_arch)
         .await;
 
     // Cleanup upload session

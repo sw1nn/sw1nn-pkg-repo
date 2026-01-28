@@ -46,21 +46,16 @@ pub async fn list_packages(
     State(state): State<Arc<AppState>>,
     Query(query): Query<PackageQuery>,
 ) -> Result<Json<Vec<Package>>> {
-    // If both repo and arch are not specified, list all packages
-    // Otherwise use specified repo/arch or defaults
-    let mut packages = if query.repo.is_none() && query.arch.is_none() {
-        state.storage.list_all_packages().await?
+    // List packages from specified repo or all repos
+    let mut packages = if let Some(ref repo) = query.repo {
+        // If arch filter is specified, use list_packages_for_arch
+        if let Some(ref arch) = query.arch {
+            state.storage.list_packages_for_arch(repo, arch).await?
+        } else {
+            state.storage.list_packages(repo).await?
+        }
     } else {
-        let repo = query
-            .repo
-            .as_deref()
-            .unwrap_or(&state.config.storage.default_repo);
-        let arch = query
-            .arch
-            .as_deref()
-            .unwrap_or(&state.config.storage.default_arch);
-
-        state.storage.list_packages(repo, arch).await?
+        state.storage.list_all_packages().await?
     };
 
     // Apply filters
@@ -103,18 +98,27 @@ pub async fn delete_package(
     let repo = query
         .repo
         .unwrap_or_else(|| state.config.storage.default_repo.clone());
-    let arch = query
-        .arch
-        .unwrap_or_else(|| state.config.storage.default_arch.clone());
 
-    // Load package metadata
-    let package = state.storage.load_package(&repo, &arch, &name).await?;
+    // Load package metadata (no arch in path, arch is in metadata)
+    let package = state.storage.load_package(&repo, &name).await?;
+
+    // Get the arch from the package for database update
+    let arch = package.arch.clone();
 
     // Delete package
     state.storage.delete_package(&package).await?;
 
-    // Request database update (debounced, coalesced)
-    state.db_update.request_update(&repo, &arch).await;
+    // Request database update for affected architectures
+    // If package arch is "any", update the default arch database
+    // Otherwise update the specific arch database
+    let update_arch = if arch == "any" {
+        query
+            .arch
+            .unwrap_or_else(|| state.config.storage.default_arch.clone())
+    } else {
+        arch
+    };
+    state.db_update.request_update(&repo, &update_arch).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -147,16 +151,18 @@ pub async fn rebuild_db(
 
 /// Regenerate repository database for a given repo/arch
 pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str) -> Result<()> {
-    let packages = storage.list_packages(repo, arch).await?;
+    // List packages for this arch (includes "any" architecture packages)
+    let packages = storage.list_packages_for_arch(repo, arch).await?;
 
-    let repo_dir = storage.repo_dir(repo, arch)?;
+    // Database files go in os/{arch}/ for URL compatibility
+    let db_dir = storage.db_dir(repo, arch)?;
 
     // Group packages by name and keep only the latest version of each
     let latest_packages = select_latest_versions(packages);
 
     tracing::info!(
-        repo = %repo,
-        arch = %arch,
+        repo,
+        arch,
         package_count = latest_packages.len(),
         "Regenerating database with latest package versions"
     );
@@ -164,7 +170,8 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
     // Load pkginfo for each package
     let mut pkg_data = Vec::new();
     for pkg in latest_packages {
-        let pkg_path = storage.package_path(repo, arch, &pkg.filename)?;
+        // Package files are in flat storage (no arch in path)
+        let pkg_path = storage.package_path(repo, &pkg.filename)?;
 
         // Read package file, skipping if missing (orphaned metadata)
         let data = match tokio::fs::read(&pkg_path).await {
@@ -183,14 +190,14 @@ pub(crate) async fn regenerate_repo_db(storage: &Storage, repo: &str, arch: &str
         // Extract pkginfo in blocking task (CPU-intensive decompression)
         let pkginfo = tokio::task::spawn_blocking(move || extract_pkginfo(&data))
             .await
-            .map_err(|e| std::io::Error::other(format!("Task join error: {}", e)))??;
+            .map_err(|e| std::io::Error::other(format!("Task join error: {e}")))??;
 
         pkg_data.push((pkg, pkginfo));
     }
 
     // Generate databases
-    generate_repo_db(&repo_dir, repo, &pkg_data).await?;
-    generate_files_db(&repo_dir, repo, &pkg_data).await?;
+    generate_repo_db(&db_dir, repo, &pkg_data).await?;
+    generate_files_db(&db_dir, repo, &pkg_data).await?;
 
     Ok(())
 }

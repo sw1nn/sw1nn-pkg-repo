@@ -54,8 +54,8 @@ pub async fn cleanup_old_versions(
     repo: &str,
     arch: &str,
 ) -> Result<Vec<Package>> {
-    // List all packages for this repo/arch
-    let all_packages = storage.list_packages(repo, arch).await?;
+    // List all packages for this repo, filtered by arch
+    let all_packages = storage.list_packages_for_arch(repo, arch).await?;
 
     // Filter by package name
     let packages: Vec<Package> = all_packages

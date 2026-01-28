@@ -87,8 +87,8 @@ pub async fn delete_versions(
         .arch
         .unwrap_or_else(|| state.config.storage.default_arch.clone());
 
-    // Get all packages for this name/repo/arch
-    let all_packages = state.storage.list_packages(&repo, &arch).await?;
+    // Get all packages for this name/repo/arch (includes "any" packages)
+    let all_packages = state.storage.list_packages_for_arch(&repo, &arch).await?;
     let packages: Vec<Package> = all_packages
         .into_iter()
         .filter(|p| p.name == name)

@@ -18,7 +18,7 @@ fn validate_path_component(component: &str) -> Result<()> {
 
     if component == "." || component == ".." {
         return Err(Error::InvalidPackage {
-            pkgname: format!("Invalid path component: '{}'", component),
+            pkgname: format!("Invalid path component: '{component}'"),
         });
     }
 
@@ -74,8 +74,12 @@ fn validate_path_within_base(base: &Path, path: &Path) -> Result<()> {
 }
 
 /// Storage layer for managing package files and metadata
-/// Structure: data/{repo}/os/{arch}/{package-file}
-///            data/{repo}/os/{arch}/metadata/{package-name}.json
+///
+/// Flat storage structure (arch is metadata, not directory):
+///   data/{repo}/packages/{package-file}
+///   data/{repo}/packages/{package-file}.sig
+///   data/{repo}/metadata/{package-name}.json
+///   data/{repo}/os/{arch}/{repo}.db.tar.gz  (databases for URL compatibility)
 pub struct Storage {
     base_path: PathBuf,
 }
@@ -87,45 +91,57 @@ impl Storage {
         }
     }
 
-    /// Get the path for a package file
-    pub fn package_path(&self, repo: &str, arch: &str, filename: &str) -> Result<PathBuf> {
+    /// Get the packages directory for a repo
+    pub fn packages_dir(&self, repo: &str) -> Result<PathBuf> {
         validate_path_component(repo)?;
-        validate_path_component(arch)?;
-        validate_path_component(filename)?;
 
-        let path = self
-            .base_path
-            .join(repo)
-            .join("os")
-            .join(arch)
-            .join(filename);
+        let path = self.base_path.join(repo).join("packages");
 
         validate_path_within_base(&self.base_path, &path)?;
 
         Ok(path)
     }
 
-    /// Get the path for package metadata
-    pub fn metadata_path(&self, repo: &str, arch: &str, package_name: &str) -> Result<PathBuf> {
+    /// Get the metadata directory for a repo
+    pub fn metadata_dir(&self, repo: &str) -> Result<PathBuf> {
         validate_path_component(repo)?;
-        validate_path_component(arch)?;
+
+        let path = self.base_path.join(repo).join("metadata");
+
+        validate_path_within_base(&self.base_path, &path)?;
+
+        Ok(path)
+    }
+
+    /// Get the path for a package file (flat structure, no arch in path)
+    pub fn package_path(&self, repo: &str, filename: &str) -> Result<PathBuf> {
+        validate_path_component(repo)?;
+        validate_path_component(filename)?;
+
+        let path = self.packages_dir(repo)?.join(filename);
+
+        validate_path_within_base(&self.base_path, &path)?;
+
+        Ok(path)
+    }
+
+    /// Get the path for package metadata (flat structure, no arch in path)
+    pub fn metadata_path(&self, repo: &str, package_name: &str) -> Result<PathBuf> {
+        validate_path_component(repo)?;
         validate_path_component(package_name)?;
 
         let path = self
-            .base_path
-            .join(repo)
-            .join("os")
-            .join(arch)
-            .join("metadata")
-            .join(format!("{}.json", package_name));
+            .metadata_dir(repo)?
+            .join(format!("{package_name}.json"));
 
         validate_path_within_base(&self.base_path, &path)?;
 
         Ok(path)
     }
 
-    /// Get the directory path for a repo/arch combination
-    pub fn repo_dir(&self, repo: &str, arch: &str) -> Result<PathBuf> {
+    /// Get the directory path for database files (keeps arch for URL compatibility)
+    /// This is where .db and .files archives are stored
+    pub fn db_dir(&self, repo: &str, arch: &str) -> Result<PathBuf> {
         validate_path_component(repo)?;
         validate_path_component(arch)?;
 
@@ -141,10 +157,9 @@ impl Storage {
     /// Uses atomic file creation to prevent TOCTOU race conditions.
     /// If the package already exists, returns PackageAlreadyExists error.
     pub async fn store_package(&self, package: &Package, data: &[u8]) -> Result<()> {
-        let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
-        // Use full filename (without .pkg.tar.zst extension) for metadata to support multiple versions
+        let pkg_path = self.package_path(&package.repo, &package.filename)?;
         let metadata_filename = package.filename.trim_end_matches(".pkg.tar.zst");
-        let meta_path = self.metadata_path(&package.repo, &package.arch, metadata_filename)?;
+        let meta_path = self.metadata_path(&package.repo, metadata_filename)?;
 
         // Create directories
         if let Some(parent) = pkg_path.parent() {
@@ -199,10 +214,9 @@ impl Storage {
         package: &Package,
         source_path: &std::path::Path,
     ) -> Result<()> {
-        let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
-        // Use full filename (without .pkg.tar.zst extension) for metadata to support multiple versions
+        let pkg_path = self.package_path(&package.repo, &package.filename)?;
         let metadata_filename = package.filename.trim_end_matches(".pkg.tar.zst");
-        let meta_path = self.metadata_path(&package.repo, &package.arch, metadata_filename)?;
+        let meta_path = self.metadata_path(&package.repo, metadata_filename)?;
 
         // Create directories
         if let Some(parent) = pkg_path.parent() {
@@ -234,14 +248,9 @@ impl Storage {
         Ok(())
     }
 
-    /// Load package metadata
-    pub async fn load_package(
-        &self,
-        repo: &str,
-        arch: &str,
-        package_name: &str,
-    ) -> Result<Package> {
-        let meta_path = self.metadata_path(repo, arch, package_name)?;
+    /// Load package metadata by filename
+    pub async fn load_package(&self, repo: &str, package_name: &str) -> Result<Package> {
+        let meta_path = self.metadata_path(repo, package_name)?;
 
         if !meta_path.exists() {
             return Err(Error::PackageNotFound {
@@ -257,9 +266,29 @@ impl Storage {
         Ok(package)
     }
 
-    /// List all packages in a repo/arch
-    pub async fn list_packages(&self, repo: &str, arch: &str) -> Result<Vec<Package>> {
-        let meta_dir = self.repo_dir(repo, arch)?.join("metadata");
+    /// Find a package by filename, checking if arch matches or is "any"
+    pub async fn find_package_for_arch(
+        &self,
+        repo: &str,
+        arch: &str,
+        filename: &str,
+    ) -> Result<Package> {
+        let metadata_filename = filename.trim_end_matches(".pkg.tar.zst");
+        let package = self.load_package(repo, metadata_filename).await?;
+
+        // Package arch must match requested arch, or be "any"
+        if package.arch != arch && package.arch != "any" {
+            return Err(Error::PackageNotFound {
+                pkgname: filename.to_string(),
+            });
+        }
+
+        Ok(package)
+    }
+
+    /// List all packages in a repo
+    pub async fn list_packages(&self, repo: &str) -> Result<Vec<Package>> {
+        let meta_dir = self.metadata_dir(repo)?;
 
         if !meta_dir.exists() {
             return Ok(Vec::new());
@@ -281,7 +310,16 @@ impl Storage {
         Ok(packages)
     }
 
-    /// List all packages across all repos and architectures
+    /// List packages filtered by architecture (includes "any" packages)
+    pub async fn list_packages_for_arch(&self, repo: &str, arch: &str) -> Result<Vec<Package>> {
+        let packages = self.list_packages(repo).await?;
+        Ok(packages
+            .into_iter()
+            .filter(|p| p.arch == arch || p.arch == "any")
+            .collect())
+    }
+
+    /// List all packages across all repos
     pub async fn list_all_packages(&self) -> Result<Vec<Package>> {
         let mut all_packages = Vec::new();
 
@@ -303,36 +341,23 @@ impl Storage {
                 continue;
             }
 
-            let os_dir = repo_entry.path().join("os");
+            let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
+            let meta_dir = repo_entry.path().join("metadata");
 
-            if !os_dir.exists() {
+            if !meta_dir.exists() {
                 continue;
             }
 
-            // Iterate through all architectures
-            let mut arch_entries = fs::read_dir(&os_dir).await.map_io_err(&os_dir)?;
-            while let Some(arch_entry) = arch_entries.next_entry().await.map_io_err(&os_dir)? {
-                if !arch_entry.path().is_dir() {
-                    continue;
-                }
-
-                let meta_dir = arch_entry.path().join("metadata");
-
-                if !meta_dir.exists() {
-                    continue;
-                }
-
-                // Read all packages in this repo/arch
-                let mut meta_entries = fs::read_dir(&meta_dir).await.map_io_err(&meta_dir)?;
-                while let Some(meta_entry) =
-                    meta_entries.next_entry().await.map_io_err(&meta_dir)?
-                {
-                    let path = meta_entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                        let content = fs::read_to_string(&path).await.map_io_err(&path)?;
-                        if let Ok(package) = serde_json::from_str::<Package>(&content) {
-                            all_packages.push(package);
-                        }
+            // Read all packages in this repo
+            let mut meta_entries = fs::read_dir(&meta_dir).await.map_io_err(&meta_dir)?;
+            while let Some(meta_entry) = meta_entries.next_entry().await.map_io_err(&meta_dir)? {
+                let path = meta_entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    let content = fs::read_to_string(&path).await.map_io_err(&path)?;
+                    if let Ok(mut package) = serde_json::from_str::<Package>(&content) {
+                        // Ensure repo field is set correctly
+                        package.repo = repo_name.clone();
+                        all_packages.push(package);
                     }
                 }
             }
@@ -341,16 +366,14 @@ impl Storage {
         Ok(all_packages)
     }
 
-    /// List all repo/arch combinations that exist in storage
-    pub async fn list_repo_archs(&self) -> Result<Vec<(String, String)>> {
-        let mut repo_archs = Vec::new();
+    /// List all repos that exist in storage
+    pub async fn list_repos(&self) -> Result<Vec<String>> {
+        let mut repos = Vec::new();
 
-        // Check if base path exists
         if !self.base_path.exists() {
             return Ok(Vec::new());
         }
 
-        // Iterate through all repos
         let mut repo_entries = fs::read_dir(&self.base_path)
             .await
             .map_io_err(&self.base_path)?;
@@ -363,36 +386,31 @@ impl Storage {
                 continue;
             }
 
-            let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
-
-            let os_dir = repo_entry.path().join("os");
-
-            if !os_dir.exists() {
-                continue;
-            }
-
-            // Iterate through all architectures
-            let mut arch_entries = fs::read_dir(&os_dir).await.map_io_err(&os_dir)?;
-            while let Some(arch_entry) = arch_entries.next_entry().await.map_io_err(&os_dir)? {
-                if !arch_entry.path().is_dir() {
-                    continue;
-                }
-
-                let arch_name = arch_entry.file_name().to_string_lossy().into_owned();
-
-                repo_archs.push((repo_name.clone(), arch_name));
+            // Check if this looks like a repo (has packages or metadata dir)
+            let packages_dir = repo_entry.path().join("packages");
+            let metadata_dir = repo_entry.path().join("metadata");
+            if packages_dir.exists() || metadata_dir.exists() {
+                repos.push(repo_entry.file_name().to_string_lossy().into_owned());
             }
         }
 
-        Ok(repo_archs)
+        Ok(repos)
+    }
+
+    /// Get unique architectures from packages in a repo
+    pub async fn list_archs_in_repo(&self, repo: &str) -> Result<Vec<String>> {
+        let packages = self.list_packages(repo).await?;
+        let mut archs: Vec<String> = packages.into_iter().map(|p| p.arch).collect();
+        archs.sort();
+        archs.dedup();
+        Ok(archs)
     }
 
     /// Delete a package and its metadata
     pub async fn delete_package(&self, package: &Package) -> Result<()> {
-        let pkg_path = self.package_path(&package.repo, &package.arch, &package.filename)?;
-        // Use full filename (without .pkg.tar.zst extension) for metadata to support multiple versions
+        let pkg_path = self.package_path(&package.repo, &package.filename)?;
         let metadata_filename = package.filename.trim_end_matches(".pkg.tar.zst");
-        let meta_path = self.metadata_path(&package.repo, &package.arch, metadata_filename)?;
+        let meta_path = self.metadata_path(&package.repo, metadata_filename)?;
 
         // Delete package file
         if pkg_path.exists() {
@@ -414,7 +432,7 @@ impl Storage {
     }
 
     /// Check if a package file exists
-    pub async fn package_exists(&self, repo: &str, arch: &str, filename: &str) -> Result<bool> {
-        Ok(self.package_path(repo, arch, filename)?.exists())
+    pub async fn package_exists(&self, repo: &str, filename: &str) -> Result<bool> {
+        Ok(self.package_path(repo, filename)?.exists())
     }
 }

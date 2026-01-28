@@ -14,19 +14,40 @@ pub async fn serve_file(
     State(state): State<Arc<AppState>>,
     Path((repo, arch, filename)): Path<(String, String, String)>,
 ) -> Result<impl IntoResponse> {
-    let repo_dir = state.storage.repo_dir(&repo, &arch)?;
-
-    // Check if it's a database file (in repo root) or package file
+    // Check if it's a database file or package file
     let file_path = if filename.ends_with(".db")
         || filename.ends_with(".files")
         || filename.ends_with(".db.tar.gz")
         || filename.ends_with(".files.tar.gz")
     {
-        // Database files are in the repo directory root
-        repo_dir.join(&filename)
+        // Database files are in {repo}/os/{arch}/ for URL compatibility
+        let db_dir = state.storage.db_dir(&repo, &arch)?;
+        db_dir.join(&filename)
+    } else if filename.ends_with(".pkg.tar.zst") || filename.ends_with(".pkg.tar.zst.sig") {
+        // Package files are in flat storage
+        // Verify the package exists and arch matches (or is "any")
+        let pkg_filename = filename.trim_end_matches(".sig");
+
+        // Check if package metadata exists and arch matches
+        let metadata_name = pkg_filename.trim_end_matches(".pkg.tar.zst");
+        match state.storage.load_package(&repo, metadata_name).await {
+            Ok(package) => {
+                // Verify arch matches or package is "any"
+                if package.arch != arch && package.arch != "any" {
+                    return Ok((StatusCode::NOT_FOUND, "File not found").into_response());
+                }
+                // Return path to actual file
+                state.storage.package_path(&repo, &filename)?
+            }
+            Err(_) => {
+                // Package metadata not found, try direct file access for .sig files
+                // or return not found
+                state.storage.package_path(&repo, &filename)?
+            }
+        }
     } else {
-        // Package files
-        state.storage.package_path(&repo, &arch, &filename)?
+        // Unknown file type
+        return Ok((StatusCode::NOT_FOUND, "File not found").into_response());
     };
 
     if !file_path.exists() {
@@ -43,6 +64,8 @@ pub async fn serve_file(
         || filename.ends_with(".files")
     {
         "application/gzip"
+    } else if filename.ends_with(".sig") {
+        "application/pgp-signature"
     } else {
         "application/octet-stream"
     };

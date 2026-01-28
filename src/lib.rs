@@ -145,20 +145,36 @@ async fn shutdown_signal(db_update: DbUpdateHandle) {
 async fn rebuild_all_databases(storage: &Arc<Storage>, db_update: &DbUpdateHandle) {
     tracing::info!("Rebuilding all repository databases on startup");
 
-    match storage.list_repo_archs().await {
-        Ok(repo_archs) => {
-            if repo_archs.is_empty() {
-                tracing::info!("No repositories found, skipping database rebuild");
-                return;
-            }
-
-            for (repo, arch) in repo_archs {
-                tracing::info!(repo = %repo, arch = %arch, "Rebuilding database");
-                db_update.force_rebuild(&repo, &arch).await;
-            }
-        }
+    // List all repos
+    let repos = match storage.list_repos().await {
+        Ok(repos) => repos,
         Err(e) => {
             tracing::error!(error = %e, "Failed to list repositories for startup rebuild");
+            return;
+        }
+    };
+
+    if repos.is_empty() {
+        tracing::info!("No repositories found, skipping database rebuild");
+        return;
+    }
+
+    // For each repo, get unique architectures and rebuild databases
+    for repo in repos {
+        match storage.list_archs_in_repo(&repo).await {
+            Ok(archs) => {
+                for arch in archs {
+                    // Skip "any" - it's included in other arch databases
+                    if arch == "any" {
+                        continue;
+                    }
+                    tracing::info!(repo, arch, "Rebuilding database");
+                    db_update.force_rebuild(&repo, &arch).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!(repo, error = %e, "Failed to list architectures for repo");
+            }
         }
     }
 }
