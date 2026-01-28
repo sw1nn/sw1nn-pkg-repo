@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.4.1 - 2026-01-28
+#### Bug Fixes
+- (**upload**) add cleanup for stale upload sessions - (e0dd483) - Neale Swinnerton
+
+- - -
+
 ## v2.4.0 - 2026-01-28
 #### Refactoring
 - (**storage**) use flat directory structure for packages - (79b0f76) - Neale Swinnerton
