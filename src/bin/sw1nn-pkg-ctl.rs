@@ -72,6 +72,14 @@ enum Commands {
         #[arg(short, long)]
         arch: Option<String>,
     },
+    /// Replace an erroneously uploaded package (interactive confirmation required)
+    Replace {
+        /// Path to the replacement package file (.pkg.tar.zst)
+        package_file: String,
+        /// Repository name (required if package exists in multiple repos)
+        #[arg(short, long)]
+        repo: Option<String>,
+    },
     /// List packages in the repository
     List {
         /// Filter packages by name (substring match)
@@ -205,6 +213,9 @@ async fn main() {
         Some(Commands::Upload { package_files }) => {
             run_upload(&client, &base_url, package_files).await;
         }
+        Some(Commands::Replace { package_file, repo }) => {
+            run_replace(&client, &base_url, &package_file, repo).await;
+        }
         Some(Commands::Delete {
             name,
             version,
@@ -231,7 +242,7 @@ async fn main() {
             // Backwards compatibility: treat positional args as upload
             if args.package_files.is_empty() {
                 tracing::error!(
-                    "No command specified. Use 'upload', 'delete', or 'list' subcommand, or provide package files directly."
+                    "No command specified. Use 'upload', 'delete', 'replace', or 'list' subcommand, or provide package files directly."
                 );
                 process::exit(1);
             }
@@ -336,6 +347,198 @@ async fn run_delete(
             process::exit(1);
         }
     }
+}
+
+async fn run_replace(
+    client: &reqwest::Client,
+    base_url: &str,
+    package_file: &str,
+    repo_filter: Option<String>,
+) {
+    let path = Path::new(package_file);
+
+    // Validate file exists
+    if !path.exists() {
+        tracing::error!(path = package_file, "File does not exist");
+        process::exit(1);
+    }
+
+    // Validate extension
+    if !package_file.ends_with(".pkg.tar.zst") {
+        tracing::error!(path = package_file, "File must be a .pkg.tar.zst package");
+        process::exit(1);
+    }
+
+    let filename = path.file_name().unwrap().to_string_lossy().into_owned();
+
+    // Compute SHA256 of the new file
+    tracing::info!("Calculating SHA256 of replacement file...");
+    let new_file_data = tokio::fs::read(path).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to read file");
+        process::exit(1);
+    });
+    let new_sha256 = format!("{:x}", sha2::Sha256::digest(&new_file_data));
+    let new_size = new_file_data.len() as u64;
+
+    // Query existing packages
+    let packages = list_packages(client, base_url).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to query packages");
+        process::exit(1);
+    });
+
+    // Find matching packages by filename
+    let mut matches: Vec<&Package> = packages.iter().filter(|p| p.filename == filename).collect();
+
+    // Apply repo filter if provided
+    if let Some(ref repo) = repo_filter {
+        matches.retain(|p| &p.repo == repo);
+    }
+
+    if matches.is_empty() {
+        tracing::error!(
+            filename,
+            "No existing package found with this filename on the server"
+        );
+        process::exit(1);
+    }
+
+    if matches.len() > 1 {
+        tracing::error!(
+            filename,
+            repos = ?matches.iter().map(|p| &p.repo).collect::<Vec<_>>(),
+            "Package exists in multiple repos — use --repo to specify which one"
+        );
+        process::exit(1);
+    }
+
+    let existing = matches[0];
+
+    // Check if files are identical
+    if existing.sha256 == new_sha256 {
+        println!(
+            "\n{}",
+            "⚠ Replacement file is identical to the existing package (same SHA256). Aborting."
+                .yellow()
+                .bold()
+        );
+        process::exit(1);
+    }
+
+    // Display comparison
+    let existing_size_str = format_size(existing.size, SizeUnit::Binary);
+    let new_size_str = format_size(new_size, SizeUnit::Binary);
+
+    println!();
+    println!("{}", "⚠ Package Replacement".yellow().bold());
+    println!("{}", "=".repeat(50));
+    println!("  {:>11}  {}", "Package:".cyan().bold(), existing.name);
+    println!("  {:>11}  {}", "Version:".cyan().bold(), existing.version);
+    println!("  {:>11}  {}", "Arch:".cyan().bold(), existing.arch);
+    println!("  {:>11}  {}", "Repo:".cyan().bold(), existing.repo);
+    println!("  {:>11}  {}", "Filename:".cyan().bold(), existing.filename);
+    println!();
+    println!("  {}", "Existing package:".bold());
+    println!(
+        "    {:>9}  {}",
+        "SHA256:".cyan(),
+        existing.sha256.bright_black()
+    );
+    println!(
+        "    {:>9}  {}",
+        "Size:".cyan(),
+        existing_size_str.bright_black()
+    );
+    println!(
+        "    {:>9}  {}",
+        "Uploaded:".cyan(),
+        existing
+            .created_at
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string()
+            .bright_black()
+    );
+    println!();
+    println!("  {}", "Replacement file:".bold());
+    println!("    {:>9}  {}", "SHA256:".cyan(), new_sha256.bright_black());
+    println!("    {:>9}  {}", "Size:".cyan(), new_size_str.bright_black());
+    println!("{}", "=".repeat(50));
+    println!();
+
+    // Interactive confirmation
+    let confirmation = read_confirmation(&format!(
+        "Type the package name ({}) to confirm replacement: ",
+        existing.name.red().bold()
+    ));
+
+    if confirmation != existing.name {
+        println!("{}", "Aborted — package name did not match.".red().bold());
+        process::exit(1);
+    }
+
+    // Delete existing version
+    tracing::info!(
+        name = %existing.name,
+        version = %existing.version,
+        "Deleting existing package version"
+    );
+    let delete_result = delete_versions(
+        client,
+        base_url,
+        &existing.name,
+        vec![existing.version.clone()],
+        Some(existing.repo.clone()),
+        Some(existing.arch.clone()),
+    )
+    .await;
+
+    if let Err(e) = delete_result {
+        tracing::error!(error = %e, "Failed to delete existing package");
+        process::exit(1);
+    }
+
+    // Upload replacement
+    tracing::info!("Uploading replacement package...");
+    let upload_result = upload_chunked(client, base_url, path, 1, 1).await;
+
+    match upload_result {
+        Ok(package) => {
+            println!("\n{}", "✓ Package replaced successfully".green().bold());
+            println!();
+            println!("  {:>11}  {}", "Name:".cyan().bold(), package.name);
+            println!("  {:>11}  {}", "Version:".cyan().bold(), package.version);
+            println!("  {:>11}  {}", "Arch:".cyan().bold(), package.arch);
+            println!("  {:>11}  {}", "Repo:".cyan().bold(), package.repo);
+            println!(
+                "  {:>11}  {}",
+                "SHA256:".cyan().bold(),
+                package.sha256.bright_black()
+            );
+            println!(
+                "  {:>11}  {}",
+                "Size:".cyan().bold(),
+                format_size(package.size, SizeUnit::Binary).bright_black()
+            );
+            println!();
+        }
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                "Failed to upload replacement — the original package has been deleted!"
+            );
+            process::exit(1);
+        }
+    }
+}
+
+fn read_confirmation(prompt: &str) -> String {
+    use std::io::Write;
+    print!("{prompt}");
+    std::io::stdout().flush().expect("failed to flush stdout");
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .expect("failed to read from stdin");
+    input.trim().to_string()
 }
 
 fn configure_colors(mode: ColorMode) {
