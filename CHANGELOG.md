@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.5.0 - 2026-02-07
+#### Features
+- (**ctl**) add replace subcommand for erroneously uploaded packages - (db396c1) - Neale Swinnerton
+
+- - -
+
 ## v2.4.1 - 2026-01-28
 #### Bug Fixes
 - (**upload**) add cleanup for stale upload sessions - (e0dd483) - Neale Swinnerton
