@@ -63,8 +63,8 @@ enum Commands {
         #[arg(short, long)]
         name: String,
         /// Version(s) to delete - can be exact (1.0.0-1) or semver ranges (^1.0.0)
-        #[arg(short, long, required = true)]
-        version: Vec<String>,
+        #[arg(short = 'v', long = "pkg-version", required = true)]
+        pkg_version: Vec<String>,
         /// Repository name (optional)
         #[arg(short, long)]
         repo: Option<String>,
@@ -218,11 +218,11 @@ async fn main() {
         }
         Some(Commands::Delete {
             name,
-            version,
+            pkg_version,
             repo,
             arch,
         }) => {
-            run_delete(&client, &base_url, name, version, repo, arch).await;
+            run_delete(&client, &base_url, name, pkg_version, repo, arch).await;
         }
         Some(Commands::List {
             name,
