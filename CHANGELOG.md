@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v2.6.0 - 2026-02-12
+#### Features
+- (**ctl**) add wildcard name support to delete subcommand - (5ef167d) - Neale Swinnerton
+#### Bug Fixes
+- (**ctl**) rename delete --version to --pkg-version to avoid clash with global --version flag - (32b2eed) - Neale Swinnerton
+
+- - -
+
 ## v2.5.0 - 2026-02-07
 #### Features
 - (**ctl**) add replace subcommand for erroneously uploaded packages - (db396c1) - Neale Swinnerton
