@@ -1,9 +1,11 @@
 use byte_unit::{Byte, UnitType};
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
+use glob::Pattern;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process;
 use tokio::fs::File;
@@ -322,10 +324,29 @@ async fn run_upload(client: &reqwest::Client, base_url: &str, package_files: Vec
     }
 }
 
+fn contains_wildcard(s: &str) -> bool {
+    s.contains('*') || s.contains('?')
+}
+
 async fn run_delete(
     client: &reqwest::Client,
     base_url: &str,
     name: String,
+    versions: Vec<String>,
+    repo: Option<String>,
+    arch: Option<String>,
+) {
+    if contains_wildcard(&name) {
+        run_delete_wildcard(client, base_url, &name, versions, repo, arch).await;
+    } else {
+        run_delete_exact(client, base_url, &name, versions, repo, arch).await;
+    }
+}
+
+async fn run_delete_exact(
+    client: &reqwest::Client,
+    base_url: &str,
+    name: &str,
     versions: Vec<String>,
     repo: Option<String>,
     arch: Option<String>,
@@ -336,16 +357,116 @@ async fn run_delete(
         "Deleting package version(s) from {base_url}"
     );
 
-    let result = delete_versions(client, base_url, &name, versions, repo, arch).await;
+    let result = delete_versions(client, base_url, name, versions, repo, arch).await;
 
     match result {
         Ok(response) => {
-            print_delete_success(&name, &response);
+            print_delete_success(name, &response);
         }
         Err(e) => {
             tracing::error!(error = %e, "Delete failed");
             process::exit(1);
         }
+    }
+}
+
+async fn run_delete_wildcard(
+    client: &reqwest::Client,
+    base_url: &str,
+    name_pattern: &str,
+    versions: Vec<String>,
+    repo: Option<String>,
+    arch: Option<String>,
+) {
+    let pattern = Pattern::new(name_pattern).unwrap_or_else(|e| {
+        tracing::error!(pattern = name_pattern, error = %e, "Invalid wildcard pattern");
+        process::exit(1);
+    });
+
+    let packages = list_packages(client, base_url).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to list packages");
+        process::exit(1);
+    });
+
+    let matched_names: BTreeSet<&str> = packages
+        .iter()
+        .filter(|p| pattern.matches(&p.name))
+        .map(|p| p.name.as_str())
+        .collect();
+
+    if matched_names.is_empty() {
+        tracing::error!(
+            pattern = name_pattern,
+            "No packages matched wildcard pattern"
+        );
+        process::exit(1);
+    }
+
+    println!();
+    println!(
+        "Wildcard '{}' matched {} package(s):",
+        format!("--name {name_pattern}").yellow().bold(),
+        matched_names.len().to_string().yellow()
+    );
+    for name in &matched_names {
+        println!("  - {}", name.green());
+    }
+    println!();
+
+    let confirmation = read_confirmation("Type 'yes' to confirm deletion: ");
+    if confirmation != "yes" {
+        println!("{}", "Aborted.".red().bold());
+        process::exit(1);
+    }
+
+    let mut total_deleted = 0usize;
+    let mut total_failed = 0usize;
+
+    for name in &matched_names {
+        tracing::info!(
+            package = %name,
+            versions = ?versions,
+            "Deleting package version(s)"
+        );
+
+        let result = delete_versions(
+            client,
+            base_url,
+            name,
+            versions.clone(),
+            repo.clone(),
+            arch.clone(),
+        )
+        .await;
+
+        match result {
+            Ok(response) => {
+                print_delete_success(name, &response);
+                total_deleted += response.deleted_count;
+            }
+            Err(e) => {
+                tracing::error!(package = %name, error = %e, "Delete failed");
+                total_failed += 1;
+            }
+        }
+    }
+
+    println!("{}", "=".repeat(50));
+    println!("{}", "Delete Summary".bold());
+    println!("{}", "=".repeat(50));
+    println!(
+        "  Packages matched:  {}",
+        matched_names.len().to_string().yellow()
+    );
+    println!("  Versions deleted:  {}", total_deleted.to_string().green());
+    if total_failed > 0 {
+        println!("  Packages failed:   {}", total_failed.to_string().red());
+    }
+    println!("{}", "=".repeat(50));
+    println!();
+
+    if total_failed > 0 {
+        process::exit(1);
     }
 }
 
