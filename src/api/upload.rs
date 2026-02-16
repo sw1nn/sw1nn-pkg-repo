@@ -112,6 +112,7 @@ pub struct AbortUploadResponse {
     tag = "chunked-uploads"
 )]
 pub async fn initiate_upload(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     Json(req): Json<InitiateUploadRequest>,
 ) -> Result<impl IntoResponse> {
@@ -203,6 +204,7 @@ pub async fn initiate_upload(
     tag = "chunked-uploads"
 )]
 pub async fn upload_chunk(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     Path((upload_id, chunk_number)): Path<(String, u32)>,
     body: Bytes,
@@ -247,6 +249,7 @@ pub async fn upload_chunk(
     tag = "chunked-uploads"
 )]
 pub async fn upload_signature(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     Path(upload_id): Path<String>,
     body: Bytes,
@@ -292,6 +295,7 @@ pub async fn upload_signature(
     tag = "chunked-uploads"
 )]
 pub async fn complete_upload(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     Path(upload_id): Path<String>,
     Json(req): Json<CompleteUploadRequest>,
@@ -449,6 +453,7 @@ pub async fn complete_upload(
     tag = "chunked-uploads"
 )]
 pub async fn abort_upload(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     Path(upload_id): Path<String>,
 ) -> Result<impl IntoResponse> {

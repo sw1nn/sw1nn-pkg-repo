@@ -49,6 +49,11 @@ reqwest = { version = "0.12", features = ["multipart", "json"] }
 colored = "2"
 indicatif = "0.17"
 
+# Authentication
+jsonwebtoken = "9"
+dirs = "5"
+async-trait = "0.1"
+
 # Archive handling
 tar = "0.4"
 flate2 = "1.0"

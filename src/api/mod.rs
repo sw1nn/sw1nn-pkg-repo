@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod cleanup_policy;
 pub mod delete_versions;
 mod upload;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub config: Config,
     pub upload_store: UploadSessionStore,
     pub db_update: DbUpdateHandle,
+    pub http_client: reqwest::Client,
 }
 
 /// List packages with optional filtering
@@ -91,6 +93,7 @@ pub async fn list_packages(
     tag = "packages"
 )]
 pub async fn delete_package(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     AxumPath(name): AxumPath<String>,
     Query(query): Query<PackageQuery>,
@@ -138,6 +141,7 @@ pub async fn delete_package(
     tag = "packages"
 )]
 pub async fn rebuild_db(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     AxumPath((repo, arch)): AxumPath<(String, String)>,
 ) -> Result<impl IntoResponse> {
@@ -295,5 +299,7 @@ pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
         .routes(routes!(upload::upload_signature))
         .routes(routes!(upload::complete_upload))
         .routes(routes!(upload::abort_upload))
+        .route("/auth/device/code", post(auth::device_code))
+        .route("/auth/device/token", post(auth::device_token))
         .with_state(state)
 }

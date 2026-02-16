@@ -1,4 +1,5 @@
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod db_actor;
 pub mod error;
@@ -79,6 +80,7 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
         config: config.clone(),
         upload_store,
         db_update: db_update_handle,
+        http_client: reqwest::Client::new(),
     });
 
     // Build API routes using utoipa_axum router

@@ -42,6 +42,7 @@ pub async fn setup_test_app() -> Router {
         config: config.clone(),
         upload_store,
         db_update: db_update_handle,
+        http_client: reqwest::Client::new(),
     });
 
     // Build API routes
@@ -57,6 +58,46 @@ pub async fn setup_test_app() -> Router {
         .merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));
 
     // Combine all routes
+    Router::new()
+        .nest("/api", api_router)
+        .merge(repo_routes)
+        .merge(doc_routes)
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+}
+
+pub async fn setup_test_app_with_auth(auth: sw1nn_pkg_repo::config::AuthConfig) -> Router {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path().to_path_buf();
+    std::mem::forget(temp_dir);
+
+    let mut config = Config::default();
+    config.storage.data_path = temp_path.clone();
+    config.storage.auto_cleanup_enabled = false;
+    config.auth = Some(auth);
+
+    let storage = Arc::new(Storage::new(&config.storage.data_path));
+    let upload_store = UploadSessionStore::new(temp_path);
+
+    let (db_actor, db_update_handle) =
+        DbUpdateActor::with_debounce(Arc::clone(&storage), Duration::from_millis(100));
+    tokio::spawn(db_actor.run());
+
+    let state = Arc::new(AppState {
+        storage,
+        config: config.clone(),
+        upload_store,
+        db_update: db_update_handle,
+        http_client: reqwest::Client::new(),
+    });
+
+    let (api_router, api_doc) = create_api_router(state.clone()).split_for_parts();
+    let repo_routes = Router::new()
+        .route("/:repo/os/:arch/:filename", axum::routing::get(serve_file))
+        .with_state(state.clone());
+    let doc_routes = Router::new()
+        .merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));
+
     Router::new()
         .nest("/api", api_router)
         .merge(repo_routes)

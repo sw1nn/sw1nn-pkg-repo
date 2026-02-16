@@ -10,3 +10,21 @@ max_payload_size = "512MiB"
 data_path = "/var/lib/sw1nn-pkg-repo/data"
 default_repo = "sw1nn"
 default_arch = "x86_64"
+
+# [auth]
+# Uncomment to enable GitHub OAuth authentication on write endpoints.
+# Without this section, all endpoints are publicly accessible.
+#
+# GitHub OAuth App client ID (create at https://github.com/settings/applications/new)
+# Use "Device Flow" authorization — no callback URL needed.
+# github_client_id = "Iv1.xxxxxxxxxxxxxxxx"
+#
+# GitHub usernames allowed to write to this repository
+# allowed_users = ["sw1nn"]
+#
+# Secret key for signing JWTs (minimum 32 characters)
+# Generate with: openssl rand -hex 32
+# jwt_secret = "change-me-to-a-random-64-char-hex-string-at-least-32-chars!!"
+#
+# JWT token lifetime in seconds (default: 604800 = 7 days)
+# jwt_expiration_secs = 604800

@@ -7,6 +7,20 @@ use std::path::PathBuf;
 pub struct Config {
     pub server: ServerConfig,
     pub storage: StorageConfig,
+    pub auth: Option<AuthConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthConfig {
+    pub github_client_id: String,
+    pub allowed_users: Vec<String>,
+    pub jwt_secret: String,
+    #[serde(default = "default_jwt_expiration_secs")]
+    pub jwt_expiration_secs: i64,
+}
+
+fn default_jwt_expiration_secs() -> i64 {
+    604800 // 7 days
 }
 
 #[derive(Deserialize, Clone)]
@@ -95,7 +109,7 @@ impl Config {
         }
 
         // Environment variables (highest precedence)
-        builder = builder.add_source(config::Environment::with_prefix("PKG_REPO"));
+        builder = builder.add_source(config::Environment::with_prefix("PKG_REPO").separator("__"));
 
         let config = builder.build().map_err(|e| Error::Config {
             msg: format!("Failed to load configuration: {}", e),
@@ -117,6 +131,20 @@ impl Config {
         // If canonicalize fails (e.g., path doesn't exist yet), keep the absolute path
         if let Ok(canonical) = config.storage.data_path.canonicalize() {
             config.storage.data_path = canonical;
+        }
+
+        // Validate auth config if present
+        if let Some(ref auth) = config.auth {
+            if auth.jwt_secret.len() < 32 {
+                return Err(Error::Config {
+                    msg: "jwt_secret must be at least 32 characters".to_string(),
+                });
+            }
+            if auth.allowed_users.is_empty() {
+                return Err(Error::Config {
+                    msg: "allowed_users must not be empty when auth is configured".to_string(),
+                });
+            }
         }
 
         Ok(config)
@@ -152,6 +180,7 @@ impl Default for Config {
                 default_arch: default_arch(),
                 auto_cleanup_enabled: default_auto_cleanup_enabled(),
             },
+            auth: None,
         }
     }
 }

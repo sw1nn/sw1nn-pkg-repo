@@ -27,6 +27,21 @@ pub enum Error {
 
     #[display("Permission denied: {path}")]
     PermissionDenied { path: String },
+
+    #[display("Unauthorized")]
+    Unauthorized,
+
+    #[display("Forbidden: {reason}")]
+    Forbidden { reason: String },
+
+    #[display("GitHub API error: {msg}")]
+    GitHubApi { msg: String },
+
+    #[display("JWT error: {msg}")]
+    Jwt { msg: String },
+
+    #[display("Authentication not configured")]
+    AuthNotConfigured,
 }
 
 impl std::error::Error for Error {}
@@ -115,6 +130,35 @@ impl axum::response::IntoResponse for Error {
                     "Internal server error".to_string(),
                 )
             }
+            Error::Unauthorized => (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Authentication required".to_string(),
+            ),
+            Error::Forbidden { reason } => {
+                tracing::warn!("Forbidden: {reason}");
+                (
+                    axum::http::StatusCode::FORBIDDEN,
+                    format!("Forbidden: {reason}"),
+                )
+            }
+            Error::GitHubApi { msg } => {
+                tracing::error!("GitHub API error: {msg}");
+                (
+                    axum::http::StatusCode::BAD_GATEWAY,
+                    "GitHub API error".to_string(),
+                )
+            }
+            Error::Jwt { msg } => {
+                tracing::warn!("JWT error: {msg}");
+                (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Invalid or expired token".to_string(),
+                )
+            }
+            Error::AuthNotConfigured => (
+                axum::http::StatusCode::NOT_IMPLEMENTED,
+                "Authentication is not configured on this server".to_string(),
+            ),
         };
 
         let body = axum::Json(serde_json::json!({

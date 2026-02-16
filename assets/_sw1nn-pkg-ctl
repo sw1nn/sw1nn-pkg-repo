@@ -23,7 +23,11 @@ _sw1nn-pkg-ctl() {
             commands=(
                 'upload:Upload package(s) to the repository'
                 'delete:Delete package version(s) from the repository'
+                'replace:Replace an erroneously uploaded package'
                 'list:List packages in the repository'
+                'login:Log in to the repository via GitHub'
+                'logout:Log out (remove stored token)'
+                'status:Show authentication status'
                 'help:Print help for a command'
             )
             _describe -t commands 'command' commands
@@ -54,9 +58,18 @@ _sw1nn-pkg-ctl() {
                         '(-s --sort)'{-s,--sort}'[Sort by field]:field:(name version size created arch repo)' \
                         '(-r --reverse)'{-r,--reverse}'[Reverse sort order]'
                     ;;
+                replace)
+                    _arguments \
+                        $global_opts \
+                        '(-r --repo)'{-r,--repo}'[Repository name]:repo:' \
+                        '1:package file:_files -g "*.pkg.tar.zst"'
+                    ;;
+                login|logout|status)
+                    _arguments $global_opts
+                    ;;
                 help)
                     local -a subcommands
-                    subcommands=(upload delete list)
+                    subcommands=(upload delete replace list login logout status)
                     _describe -t subcommands 'subcommand' subcommands
                     ;;
             esac

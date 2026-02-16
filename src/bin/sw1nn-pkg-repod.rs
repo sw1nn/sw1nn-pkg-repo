@@ -31,6 +31,24 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Generate authentication tokens
+    Token {
+        #[command(subcommand)]
+        action: TokenCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum TokenCommands {
+    /// Generate a new API token for a user
+    Generate {
+        /// GitHub username to generate token for
+        #[arg(short, long)]
+        username: String,
+        /// Token expiration in days (default: 365)
+        #[arg(short, long, default_value = "365")]
+        expiration_days: i64,
+    },
 }
 
 #[tokio::main]
@@ -41,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Migrate { data_path, dry_run }) => {
             run_migration(args.config.as_deref(), data_path, dry_run).await
         }
+        Some(Commands::Token { action }) => run_token_command(args.config.as_deref(), action),
         Some(Commands::Serve) | None => run_service(args.config.as_deref()).await,
     }
 }
@@ -203,6 +222,36 @@ async fn run_migration(
     } else {
         tracing::info!("Migration complete");
         tracing::info!("Run the server to rebuild databases with the new structure");
+    }
+
+    Ok(())
+}
+
+/// Generate an API token for a user
+fn run_token_command(
+    config_path: Option<&str>,
+    action: TokenCommands,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = sw1nn_pkg_repo::config::Config::load(config_path)?;
+
+    let auth_config = config
+        .auth
+        .as_ref()
+        .ok_or("Authentication is not configured. Add an [auth] section to your config.toml")?;
+
+    match action {
+        TokenCommands::Generate {
+            username,
+            expiration_days,
+        } => {
+            // Override expiration for this token
+            let mut token_auth = auth_config.clone();
+            token_auth.jwt_expiration_secs = expiration_days * 86400;
+
+            let token = sw1nn_pkg_repo::auth::create_jwt(&token_auth, &username, "admin")?;
+
+            println!("{token}");
+        }
     }
 
     Ok(())

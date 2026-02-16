@@ -106,6 +106,12 @@ enum Commands {
         #[arg(short = 'r', long)]
         reverse: bool,
     },
+    /// Log in to the repository via GitHub
+    Login,
+    /// Log out (remove stored token)
+    Logout,
+    /// Show authentication status
+    Status,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -208,7 +214,7 @@ async fn main() {
     let base_url =
         std::env::var("SW1NN_REPO_URL").unwrap_or_else(|_| "https://repo.sw1nn.net".to_string());
 
-    let client = reqwest::Client::new();
+    let client = build_authenticated_client();
 
     // Handle subcommands or backwards-compatible positional args
     match args.command {
@@ -240,11 +246,20 @@ async fn main() {
             )
             .await;
         }
+        Some(Commands::Login) => {
+            run_login(&base_url).await;
+        }
+        Some(Commands::Logout) => {
+            run_logout();
+        }
+        Some(Commands::Status) => {
+            run_status();
+        }
         None => {
             // Backwards compatibility: treat positional args as upload
             if args.package_files.is_empty() {
                 tracing::error!(
-                    "No command specified. Use 'upload', 'delete', 'replace', or 'list' subcommand, or provide package files directly."
+                    "No command specified. Use 'upload', 'delete', 'replace', 'list', 'login', 'logout', or 'status' subcommand, or provide package files directly."
                 );
                 process::exit(1);
             }
@@ -1137,6 +1152,222 @@ fn print_delete_success(name: &str, response: &DeleteVersionsResponse) {
         }
     }
     println!();
+}
+
+// -- Token storage --
+
+fn token_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from(".config"))
+        .join("sw1nn-pkg-repo")
+        .join("token")
+}
+
+fn load_token() -> Option<String> {
+    std::fs::read_to_string(token_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn save_token(token: &str) {
+    let path = token_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to create config directory");
+            process::exit(1);
+        });
+    }
+    std::fs::write(&path, token).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to save token");
+        process::exit(1);
+    });
+    // Set restrictive permissions
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+}
+
+fn delete_token() -> bool {
+    let path = token_path();
+    if path.exists() {
+        std::fs::remove_file(&path).is_ok()
+    } else {
+        false
+    }
+}
+
+fn build_authenticated_client() -> reqwest::Client {
+    let mut builder = reqwest::Client::builder();
+
+    if let Some(token) = load_token() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+        }
+        builder = builder.default_headers(headers);
+    }
+
+    builder.build().unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to build HTTP client");
+        process::exit(1);
+    })
+}
+
+// -- Login/Logout/Status commands --
+
+#[derive(Debug, Deserialize)]
+struct DeviceCodeApiResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    #[allow(dead_code)]
+    expires_in: u64,
+    interval: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum DeviceTokenResult {
+    Success {
+        token: String,
+        username: String,
+        expires_at: i64,
+    },
+    Pending {
+        #[allow(dead_code)]
+        status: String,
+    },
+}
+
+async fn run_login(base_url: &str) {
+    let client = reqwest::Client::new();
+
+    // Request device code
+    let url = format!("{base_url}/api/auth/device/code");
+    let response = client.post(&url).send().await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to contact server");
+        process::exit(1);
+    });
+
+    if response.status() == reqwest::StatusCode::NOT_IMPLEMENTED {
+        println!(
+            "{}",
+            "Authentication is not configured on this server.".yellow()
+        );
+        process::exit(1);
+    }
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        tracing::error!("Failed to start login - HTTP {status}: {body}");
+        process::exit(1);
+    }
+
+    let device_code: DeviceCodeApiResponse = response.json().await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to parse response");
+        process::exit(1);
+    });
+
+    println!();
+    println!("{}", "GitHub Device Authorization".cyan().bold());
+    println!("{}", "=".repeat(40));
+    println!("  Open:  {}", device_code.verification_uri.yellow().bold());
+    println!("  Code:  {}", device_code.user_code.green().bold());
+    println!("{}", "=".repeat(40));
+    println!();
+    println!("Waiting for authorization...");
+
+    // Poll for token
+    let poll_url = format!("{base_url}/api/auth/device/token");
+    let interval = std::time::Duration::from_secs(device_code.interval.max(5));
+
+    loop {
+        tokio::time::sleep(interval).await;
+
+        let response = client
+            .post(&poll_url)
+            .json(&serde_json::json!({"device_code": device_code.device_code}))
+            .send()
+            .await;
+
+        let response = match response {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "Poll request failed, retrying...");
+                continue;
+            }
+        };
+
+        let status = response.status();
+
+        if status == reqwest::StatusCode::ACCEPTED {
+            // Still pending
+            continue;
+        }
+
+        if status == reqwest::StatusCode::FORBIDDEN {
+            let body = response.text().await.unwrap_or_default();
+            println!("\n{}", format!("Login denied: {body}").red().bold());
+            process::exit(1);
+        }
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            tracing::error!("Login failed - HTTP {status}: {body}");
+            process::exit(1);
+        }
+
+        let result: DeviceTokenResult = response.json().await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to parse token response");
+            process::exit(1);
+        });
+
+        match result {
+            DeviceTokenResult::Success {
+                token,
+                username,
+                expires_at,
+            } => {
+                save_token(&token);
+                let expires = chrono::DateTime::from_timestamp(expires_at, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                println!();
+                println!("{}", format!("Logged in as {username}").green().bold());
+                println!("  Token saved to: {}", token_path().display());
+                println!("  Expires: {expires}");
+                println!();
+                return;
+            }
+            DeviceTokenResult::Pending { .. } => continue,
+        }
+    }
+}
+
+fn run_logout() {
+    if delete_token() {
+        println!("{}", "Logged out successfully.".green().bold());
+    } else {
+        println!("{}", "No token found — already logged out.".yellow());
+    }
+}
+
+fn run_status() {
+    let path = token_path();
+    match load_token() {
+        Some(_) => {
+            println!("{}", "Authenticated".green().bold());
+            println!("  Token: {}", path.display());
+        }
+        None => {
+            println!("{}", "Not authenticated".yellow().bold());
+            println!("  Run '{}' to log in", "sw1nn-pkg-ctl login".cyan());
+        }
+    }
 }
 
 /// Print success message for uploaded package
