@@ -9,6 +9,7 @@ license=('MIT')
 makedepends=('rust' 'cargo' 'git' 'zstd')
 source=("$pkgbase::git+https://github.com/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")
 sha256sums=('SKIP')
+options=('!lto')
 
 build() {
   cd "$srcdir/$pkgbase"
