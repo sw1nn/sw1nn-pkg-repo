@@ -5,15 +5,15 @@ edition = "2024"
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
 
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-axum = { version = "0.1" }
-utoipa-rapidoc = { version = "5", features = ["axum"] }
+utoipa-axum = { version = "0.2" }
+utoipa-rapidoc = { version = "6", features = ["axum"] }
 
 
 # Serialization
@@ -21,11 +21,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Configuration
-config = "0.14"
+config = "0.15"
 clap = { version = "4", features = ["derive"] }
 
 # Error handling
-derive_more = { version = "1", features = ["full"] }
+derive_more = { version = "2.1", features = ["full"] }
 
 # Logging
 tracing = "0.1"
@@ -36,27 +36,26 @@ tracing-journald = "0.3"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
-md5 = "0.7"
+md5 = "0.8"
 byte-unit = { version = "5", features = ["serde"] }
-alpm-types = "0.7"
+alpm-types = "0.11"
 semver = "1.0"
 glob = "0.3"
 
 # HTTP client (for pkg-upload binary)
-reqwest = { version = "0.12", features = ["multipart", "json"] }
+reqwest = { version = "0.13", features = ["multipart", "json", "form"] }
 
 # Metrics
 metrics = "0.24"
-metrics-exporter-prometheus = "0.16"
+metrics-exporter-prometheus = "0.18"
 
 # Terminal colors
-colored = "2"
-indicatif = "0.17"
+colored = "3.1"
+indicatif = "0.18"
 
 # Authentication
-jsonwebtoken = "9"
-dirs = "5"
-async-trait = "0.1"
+jsonwebtoken = "10.3"
+dirs = "6"
 
 # Archive handling
 tar = "0.4"

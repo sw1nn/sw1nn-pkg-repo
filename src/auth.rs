@@ -1,7 +1,6 @@
 use crate::api::AppState;
 use crate::config::AuthConfig;
 use crate::error::Error;
-use async_trait::async_trait;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
@@ -214,7 +213,6 @@ pub async fn get_github_user(
 
 // -- Axum Extractor --
 
-#[async_trait]
 impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
     type Rejection = Error;
 
