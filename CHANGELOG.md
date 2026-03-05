@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.8.0 - 2026-03-05
+#### Bug Fixes
+- (**deps**) update dependencies and fix reqwest/axum breaking changes - (eb6d13b) - Neale Swinnerton
+
+- - -
+
 ## v2.7.1 - 2026-03-05
 #### Bug Fixes
 - (**link**) disable lto in the PKGBUILD - (e483e68) - Neale Swinnerton
