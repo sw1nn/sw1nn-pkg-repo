@@ -111,6 +111,8 @@ pub async fn delete_package(
     // Delete package
     state.storage.delete_package(&package).await?;
 
+    crate::metrics::record_package_deleted(&repo, 1);
+
     // Request database update for affected architectures
     // If package arch is "any", update the default arch database
     // Otherwise update the specific arch database

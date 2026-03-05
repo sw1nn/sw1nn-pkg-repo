@@ -372,6 +372,10 @@ pub async fn complete_upload(
         .store_package_from_path(&package, &assembled_path)
         .await?;
 
+    // Record upload metrics
+    crate::metrics::record_upload_completed(&package.repo);
+    crate::metrics::record_upload_size(&package.repo, package.size);
+
     // Store signature if present
     if session.has_signature {
         if let Some(sig_data) = state.upload_store.get_signature(&upload_id).await? {
@@ -407,6 +411,7 @@ pub async fn complete_upload(
         .unwrap_or_default();
 
         if !deleted.is_empty() {
+            crate::metrics::record_cleanup_versions_deleted(&package.repo, deleted.len() as u64);
             tracing::info!(
                 package = %package.name,
                 repo = %package.repo,
@@ -458,6 +463,8 @@ pub async fn abort_upload(
     Path(upload_id): Path<String>,
 ) -> Result<impl IntoResponse> {
     let (deleted_chunks, bytes_freed) = state.upload_store.delete_session(&upload_id).await?;
+
+    crate::metrics::record_upload_aborted();
 
     let response = AbortUploadResponse {
         upload_id,

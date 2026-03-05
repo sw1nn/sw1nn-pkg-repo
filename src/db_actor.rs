@@ -172,6 +172,11 @@ impl DbUpdateActor {
         tracing::info!("Database update actor stopped");
     }
 
+    /// Report the current pending update count as a gauge
+    fn update_pending_gauge(&self) {
+        crate::metrics::set_db_pending_updates(self.pending.len());
+    }
+
     /// Handle an incoming update request
     fn handle_request(&mut self, key: RepoArchKey) {
         let now = Instant::now();
@@ -197,12 +202,15 @@ impl DbUpdateActor {
                     last_requested: now,
                 }
             });
+
+        self.update_pending_gauge();
     }
 
     /// Handle a force rebuild request - bypass debounce and rebuild immediately
     async fn handle_force_rebuild(&mut self, key: RepoArchKey) {
         // Remove any pending update for this key (we're rebuilding now)
         self.pending.remove(&key);
+        self.update_pending_gauge();
 
         tracing::info!(
             repo = %key.repo,
@@ -250,6 +258,7 @@ impl DbUpdateActor {
         // Process each ready update
         for key in ready_keys {
             if let Some(pending) = self.pending.remove(&key) {
+                self.update_pending_gauge();
                 let wait_time = now.duration_since(pending.first_requested);
                 tracing::info!(
                     repo = %key.repo,
@@ -281,7 +290,10 @@ impl DbUpdateActor {
 
     /// Perform the actual database regeneration
     async fn regenerate_db(&self, key: &RepoArchKey) {
+        let _timer = crate::metrics::ScopedTimer::db_rebuild(key.repo.clone(), key.arch.clone());
+
         if let Err(e) = regenerate_repo_db(&self.storage, &key.repo, &key.arch).await {
+            crate::metrics::record_db_rebuild(&key.repo, &key.arch, "error");
             tracing::error!(
                 repo = %key.repo,
                 arch = %key.arch,
@@ -289,6 +301,7 @@ impl DbUpdateActor {
                 "Failed to regenerate repository database"
             );
         } else {
+            crate::metrics::record_db_rebuild(&key.repo, &key.arch, "success");
             tracing::info!(
                 repo = %key.repo,
                 arch = %key.arch,

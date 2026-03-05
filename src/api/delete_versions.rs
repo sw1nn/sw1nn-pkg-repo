@@ -164,6 +164,8 @@ pub async fn delete_versions(
         );
     }
 
+    crate::metrics::record_package_deleted(&repo, deleted_count as u64);
+
     // Request database update (debounced, coalesced with other updates)
     state.db_update.request_update(&repo, &arch).await;
 

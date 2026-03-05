@@ -4,13 +4,14 @@ pub mod config;
 pub mod db_actor;
 pub mod error;
 pub mod metadata;
+pub mod metrics;
 pub mod models;
 pub mod repo;
 pub mod storage;
 pub mod upload;
 
 use api::{AppState, create_api_router};
-use axum::{Router, routing::get};
+use axum::{Router, middleware, routing::get};
 use config::Config;
 use db_actor::{DbUpdateActor, DbUpdateHandle};
 use repo::serve_file;
@@ -45,6 +46,9 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Initialize tracing
     init_tracing();
 
+    // Install metrics recorder
+    let metrics_handle = metrics::install_recorder();
+
     // Log version early
     tracing::info!("sw1nn-pkg-repo version {}", env!("CARGO_PKG_VERSION"));
 
@@ -74,6 +78,9 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Rebuild all repository databases on startup
     rebuild_all_databases(&storage, &db_update_handle).await;
 
+    // Spawn background gauge collector
+    metrics::spawn_gauge_collector(Arc::clone(&storage));
+
     // Create shared state
     let state = Arc::new(AppState {
         storage,
@@ -95,11 +102,19 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     let doc_routes = Router::new()
         .merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));
 
+    // Build metrics route
+    let metrics_routes = Router::new().route(
+        "/metrics",
+        get(move || std::future::ready(metrics_handle.render())),
+    );
+
     // Combine all routes
     let app = Router::new()
         .nest("/api", api_router)
         .merge(repo_routes)
         .merge(doc_routes)
+        .merge(metrics_routes)
+        .layer(middleware::from_fn(metrics::http_metrics_layer))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
 

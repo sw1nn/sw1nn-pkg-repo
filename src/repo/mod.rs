@@ -56,6 +56,11 @@ pub async fn serve_file(
 
     let data = tokio::fs::read(&file_path).await.map_io_err(&file_path)?;
 
+    // Record download metric for package files
+    if filename.ends_with(".pkg.tar.zst") && !filename.ends_with(".sig") {
+        crate::metrics::record_package_download(&repo, &arch);
+    }
+
     // Determine content type based on extension
     let content_type = if filename.ends_with(".pkg.tar.zst") {
         "application/zstd"

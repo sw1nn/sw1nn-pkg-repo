@@ -257,6 +257,11 @@ impl UploadSessionStore {
         }
     }
 
+    /// Get the number of active upload sessions
+    pub async fn session_count(&self) -> usize {
+        self.sessions.read().await.len()
+    }
+
     /// Create a new upload session
     pub async fn create_session(&self, session: UploadSession) -> Result<UploadSession> {
         let upload_id = session.upload_id.clone();
@@ -284,6 +289,7 @@ impl UploadSessionStore {
         // Store in memory
         let mut sessions = self.sessions.write().await;
         sessions.insert(upload_id.clone(), session.clone());
+        crate::metrics::set_upload_sessions_active(sessions.len());
 
         Ok(session)
     }
@@ -348,6 +354,7 @@ impl UploadSessionStore {
         // Remove from memory
         let mut sessions = self.sessions.write().await;
         sessions.remove(upload_id);
+        crate::metrics::set_upload_sessions_active(sessions.len());
 
         Ok((deleted_chunks, bytes_freed))
     }

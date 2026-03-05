@@ -129,6 +129,7 @@ pub async fn apply_cleanup_policy(
 
     // Request database update (debounced, coalesced with other updates)
     if total_deleted > 0 {
+        crate::metrics::record_cleanup_versions_deleted(&repo, total_deleted as u64);
         state.db_update.request_update(&repo, &arch).await;
     }
 
