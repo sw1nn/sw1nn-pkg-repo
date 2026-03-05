@@ -1,6 +1,15 @@
 # Changelog
 
 - - -
+## v2.7.0 - 2026-03-05
+#### Features
+- (**auth**) add GitHub OAuth + JWT authentication for write endpoints - (6573c30) - Neale Swinnerton
+- (**metrics**) add Prometheus metrics endpoint and instrumentation - (b426469) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**direnv**) add .envrc - (2044b80) - Neale Swinnerton
+
+- - -
+
 ## v2.6.0 - 2026-02-12
 #### Features
 - (**ctl**) add wildcard name support to delete subcommand - (5ef167d) - Neale Swinnerton
