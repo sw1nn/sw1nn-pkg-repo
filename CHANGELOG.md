@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.7.1 - 2026-03-05
+#### Bug Fixes
+- (**link**) disable lto in the PKGBUILD - (e483e68) - Neale Swinnerton
+
+- - -
+
 ## v2.7.0 - 2026-03-05
 #### Features
 - (**auth**) add GitHub OAuth + JWT authentication for write endpoints - (6573c30) - Neale Swinnerton
