@@ -1,6 +1,12 @@
 # Changelog
 
 - - -
+## v2.8.1 - 2026-03-06
+#### Bug Fixes
+- (**deps**) update jsonwebtoken and utoipa-axum breaking changes - (c8e36b2) - Neale Swinnerton
+
+- - -
+
 ## v2.8.0 - 2026-03-05
 #### Bug Fixes
 - (**deps**) update dependencies and fix reqwest/axum breaking changes - (eb6d13b) - Neale Swinnerton
