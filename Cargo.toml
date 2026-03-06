@@ -54,7 +54,7 @@ colored = "3.1"
 indicatif = "0.18"
 
 # Authentication
-jsonwebtoken = "10.3"
+jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 dirs = "6"
 
 # Archive handling

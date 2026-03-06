@@ -50,7 +50,10 @@ pub async fn setup_test_app() -> Router {
 
     // Build repository routes
     let repo_routes = Router::new()
-        .route("/:repo/os/:arch/:filename", axum::routing::get(serve_file))
+        .route(
+            "/{repo}/os/{arch}/{filename}",
+            axum::routing::get(serve_file),
+        )
         .with_state(state.clone());
 
     // Build documentation routes
@@ -93,7 +96,10 @@ pub async fn setup_test_app_with_auth(auth: sw1nn_pkg_repo::config::AuthConfig) 
 
     let (api_router, api_doc) = create_api_router(state.clone()).split_for_parts();
     let repo_routes = Router::new()
-        .route("/:repo/os/:arch/:filename", axum::routing::get(serve_file))
+        .route(
+            "/{repo}/os/{arch}/{filename}",
+            axum::routing::get(serve_file),
+        )
         .with_state(state.clone());
     let doc_routes = Router::new()
         .merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));

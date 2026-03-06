@@ -95,7 +95,7 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
 
     // Build repository routes (pacman interface)
     let repo_routes = Router::new()
-        .route("/:repo/os/:arch/:filename", get(serve_file))
+        .route("/{repo}/os/{arch}/{filename}", get(serve_file))
         .with_state(state.clone());
 
     // Build documentation routes

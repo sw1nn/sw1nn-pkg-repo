@@ -292,7 +292,7 @@ pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
         .routes(routes!(delete_package))
         .routes(routes!(rebuild_db))
         .route(
-            "/packages/:name/versions/delete",
+            "/packages/{name}/versions/delete",
             post(delete_versions::delete_versions),
         )
         .routes(routes!(cleanup_policy::apply_cleanup_policy))
