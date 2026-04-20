@@ -227,31 +227,21 @@ fn select_latest_versions(packages: Vec<Package>) -> Vec<Package> {
     latest_by_name.into_values().collect()
 }
 
-/// Compare two Arch Linux package versions
-/// Returns Ordering::Greater if v1 > v2, etc.
+/// Compare two Arch Linux package versions using the pacman vercmp algorithm
+/// (rpmvercmp), as implemented by [`alpm_types::FullVersion`].
+///
+/// Handles the full `[epoch:]pkgver-pkgrel` form, including AUR-style
+/// pkgvers like `0.15.0.r166.gae5dbc9` that aren't valid semver.
+///
+/// Falls back to plain string comparison only if both inputs fail to parse
+/// as an alpm-package-version.
 fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
-    // Try to parse as semver for comparison
-    // Format: [epoch:]pkgver-pkgrel
-    let parse = |v: &str| -> Option<(u64, semver::Version, u64)> {
-        let (epoch, rest) = if let Some((e, r)) = v.split_once(':') {
-            (e.parse::<u64>().ok()?, r)
-        } else {
-            (0, v)
-        };
-
-        let (pkgver, pkgrel) = rest.rsplit_once('-')?;
-        let pkgrel_num = pkgrel.parse::<u64>().ok()?;
-        let semver_ver = semver::Version::parse(pkgver).ok()?;
-
-        Some((epoch, semver_ver, pkgrel_num))
-    };
-
-    match (parse(v1), parse(v2)) {
-        (Some((e1, sv1, pr1)), Some((e2, sv2, pr2))) => e1
-            .cmp(&e2)
-            .then_with(|| sv1.cmp(&sv2))
-            .then_with(|| pr1.cmp(&pr2)),
-        // Fall back to string comparison if parsing fails
+    use std::str::FromStr;
+    match (
+        alpm_types::FullVersion::from_str(v1),
+        alpm_types::FullVersion::from_str(v2),
+    ) {
+        (Ok(a), Ok(b)) => a.cmp(&b),
         _ => v1.cmp(v2),
     }
 }
@@ -304,4 +294,87 @@ pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
         .route("/auth/device/code", post(auth::device_code))
         .route("/auth/device/token", post(auth::device_token))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::cmp::Ordering;
+
+    fn pkg<N, V>(name: N, version: V) -> Package
+    where
+        N: Into<String>,
+        V: Into<String>,
+    {
+        Package {
+            name: name.into(),
+            version: version.into(),
+            arch: "x86_64".to_owned(),
+            repo: "sw1nn".to_owned(),
+            filename: "ignored.pkg.tar.zst".to_owned(),
+            sha256: String::new(),
+            size: 0,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Regression for AUR-style git pkgvers where the old string-compare
+    /// fallback treated `r72` > `r166` (because `'7' > '1'` lexicographically),
+    /// causing newly-uploaded packages to be dropped from the generated DB.
+    #[test]
+    fn compare_versions_orders_aur_git_style_numerically() {
+        assert_eq!(
+            compare_versions("0.15.0.r166.gae5dbc9-1", "0.15.0.r72.ga024ce7-1"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_versions("0.15.0.r72.ga024ce7-1", "0.15.0.r166.gae5dbc9-1"),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_versions_orders_basic_semver() {
+        assert_eq!(compare_versions("1.0.0-1", "1.0.1-1"), Ordering::Less);
+        assert_eq!(compare_versions("2.0.0-1", "1.9.9-1"), Ordering::Greater);
+        assert_eq!(compare_versions("1.2.3-1", "1.2.3-1"), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_versions_orders_by_pkgrel() {
+        assert_eq!(compare_versions("1.0.0-2", "1.0.0-1"), Ordering::Greater);
+        assert_eq!(compare_versions("1.0.0-10", "1.0.0-2"), Ordering::Greater);
+    }
+
+    #[test]
+    fn compare_versions_honours_epoch() {
+        // Higher epoch always wins, even if the pkgver looks smaller.
+        assert_eq!(compare_versions("1:0.1.0-1", "2.0.0-1"), Ordering::Greater);
+        assert_eq!(compare_versions("2.0.0-1", "1:0.1.0-1"), Ordering::Less);
+    }
+
+    #[test]
+    fn compare_versions_falls_back_for_unparseable_input() {
+        // Neither side is a valid alpm-package-version (missing pkgrel).
+        // Should not panic; string compare is the documented fallback.
+        assert_eq!(compare_versions("garbage", "garbage"), Ordering::Equal);
+        assert_eq!(compare_versions("aaa", "bbb"), Ordering::Less);
+    }
+
+    #[test]
+    fn select_latest_versions_picks_newer_aur_git_version() {
+        let old = pkg("sw1nn-waybar-git", "0.15.0.r72.ga024ce7-1");
+        let new = pkg("sw1nn-waybar-git", "0.15.0.r166.gae5dbc9-1");
+
+        // Insertion order should not matter: the newer version must always win.
+        for packages in [
+            vec![old.clone(), new.clone()],
+            vec![new.clone(), old.clone()],
+        ] {
+            let latest = select_latest_versions(packages);
+            assert_eq!(latest.len(), 1);
+            assert_eq!(latest[0].version, "0.15.0.r166.gae5dbc9-1");
+        }
+    }
 }
