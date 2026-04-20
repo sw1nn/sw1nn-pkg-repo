@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v2.8.2 - 2026-04-20
+#### Bug Fixes
+- (**db**) use pacman vercmp for selecting latest package versions - (33d28f1) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**packaging**) remove sudo from makepkg hook - (7a17a1d) - Neale Swinnerton
+
+- - -
+
 ## v2.8.1 - 2026-03-06
 #### Bug Fixes
 - (**deps**) update jsonwebtoken and utoipa-axum breaking changes - (c8e36b2) - Neale Swinnerton
