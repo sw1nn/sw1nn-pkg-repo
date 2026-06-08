@@ -1,6 +1,16 @@
 # Changelog
 
 - - -
+## v2.9.0 - 2026-06-08
+#### Features
+- (**cli**) add shell completions for sw1nn-pkg-ctl - (f36dd9f) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**deps**) bump versions to latest major.minor - (f311e3d) - Neale Swinnerton
+- (**packaging**) remove hand-maintained zsh completion - (0224989) - Neale Swinnerton
+- add Justfile with release recipe - (20ce9cb) - Neale Swinnerton
+
+- - -
+
 ## v2.8.2 - 2026-04-20
 #### Bug Fixes
 - (**db**) use pacman vercmp for selecting latest package versions - (33d28f1) - Neale Swinnerton
