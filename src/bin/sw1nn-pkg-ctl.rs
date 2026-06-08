@@ -1,5 +1,6 @@
 use byte_unit::{Byte, UnitType};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use colored::Colorize;
 use glob::Pattern;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -112,6 +113,8 @@ enum Commands {
     Logout,
     /// Show authentication status
     Status,
+    /// Generate shell completions
+    Completions { shell: Shell },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -254,6 +257,14 @@ async fn main() {
         }
         Some(Commands::Status) => {
             run_status();
+        }
+        Some(Commands::Completions { shell }) => {
+            clap_complete::generate(
+                shell,
+                &mut Args::command(),
+                "sw1nn-pkg-ctl",
+                &mut std::io::stdout(),
+            );
         }
         None => {
             // Backwards compatibility: treat positional args as upload
