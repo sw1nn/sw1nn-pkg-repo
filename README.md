@@ -142,8 +142,7 @@ packaging/                      # Distribution packaging files (not build output
 
 assets/                         # Deployment assets and configuration files
 ├── config.toml                 # Service configuration
-├── sw1nn-pkg-repo.service      # systemd service file
-└── nginx-repo.sw1nn.net.conf   # nginx reverse proxy config
+└── sw1nn-pkg-repo.service      # systemd service file
 
 data/                           # Runtime data directory (repository storage)
 ├── sw1nn/                      # Repository name
