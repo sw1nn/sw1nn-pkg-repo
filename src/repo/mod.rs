@@ -1,19 +1,22 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Request, State},
     http::{StatusCode, header},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use std::sync::Arc;
+use tower::util::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::api::AppState;
-use crate::error::{Result, ResultIoExt};
+use crate::error::Result;
 
 /// Serve repository files (packages or database files)
 /// This handles both .pkg.tar.zst files and .db/.files database files
 pub async fn serve_file(
     State(state): State<Arc<AppState>>,
     Path((repo, arch, filename)): Path<(String, String, String)>,
-) -> Result<impl IntoResponse> {
+    request: Request,
+) -> Result<Response> {
     // Check if it's a database file or package file
     let file_path = if filename.ends_with(".db")
         || filename.ends_with(".files")
@@ -54,8 +57,6 @@ pub async fn serve_file(
         return Ok((StatusCode::NOT_FOUND, "File not found").into_response());
     }
 
-    let data = tokio::fs::read(&file_path).await.map_io_err(&file_path)?;
-
     // Record download metric for package files
     if filename.ends_with(".pkg.tar.zst") && !filename.ends_with(".sig") {
         crate::metrics::record_package_download(&repo, &arch);
@@ -75,5 +76,23 @@ pub async fn serve_file(
         "application/octet-stream"
     };
 
-    Ok((StatusCode::OK, [(header::CONTENT_TYPE, content_type)], data).into_response())
+    // Delegate the actual byte serving to tower-http's `ServeFile`. It honours
+    // `Range` requests (responding `206 Partial Content` / `416 Range Not
+    // Satisfiable`), advertises `Accept-Ranges: bytes`, supports conditional
+    // requests, and streams the file rather than buffering it into memory. This
+    // is what lets pacman resume an interrupted package download.
+    let mut response = ServeFile::new(&file_path)
+        .oneshot(request)
+        .await
+        .expect("ServeFile responder is infallible")
+        .into_response();
+
+    // `ServeFile` guesses the content type from the file extension; override it
+    // with the repository's canonical types.
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static(content_type),
+    );
+
+    Ok(response)
 }

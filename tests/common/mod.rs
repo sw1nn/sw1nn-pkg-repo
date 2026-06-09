@@ -1,3 +1,7 @@
+// Shared helpers are compiled into each integration-test binary separately, so
+// any helper a given binary doesn't use trips `dead_code`. Allow it here.
+#![allow(dead_code)]
+
 use axum::Router;
 use std::io::Write;
 use std::sync::Arc;
@@ -16,6 +20,13 @@ use utoipa_rapidoc::RapiDoc;
 use zstd::stream::write::Encoder;
 
 pub async fn setup_test_app() -> Router {
+    let (router, _storage) = setup_test_app_with_storage().await;
+    router
+}
+
+/// Build the test app and also return the backing [`Storage`] so tests can seed
+/// packages directly without going through the upload API.
+pub async fn setup_test_app_with_storage() -> (Router, Arc<Storage>) {
     // Create temporary directory for test data
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
@@ -38,7 +49,7 @@ pub async fn setup_test_app() -> Router {
     tokio::spawn(db_actor.run());
 
     let state = Arc::new(AppState {
-        storage,
+        storage: Arc::clone(&storage),
         config: config.clone(),
         upload_store,
         db_update: db_update_handle,
@@ -61,12 +72,14 @@ pub async fn setup_test_app() -> Router {
         .merge(RapiDoc::with_openapi("/api-docs/openapi.json", api_doc).path("/api-docs"));
 
     // Combine all routes
-    Router::new()
+    let router = Router::new()
         .nest("/api", api_router)
         .merge(repo_routes)
         .merge(doc_routes)
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http());
+
+    (router, storage)
 }
 
 pub async fn setup_test_app_with_auth(auth: sw1nn_pkg_repo::config::AuthConfig) -> Router {
@@ -145,4 +158,31 @@ pub fn create_test_package(pkgname: &str, pkgver: &str, arch: &str) -> Vec<u8> {
     }
 
     compressed
+}
+
+/// Seed a package (file + metadata) directly into storage and return both the
+/// raw package bytes and the filename it was stored under.
+pub async fn seed_package(
+    storage: &Storage,
+    repo: &str,
+    name: &str,
+    version: &str,
+    arch: &str,
+) -> (Vec<u8>, String) {
+    use sw1nn_pkg_repo::models::Package;
+
+    let data = create_test_package(name, version, arch);
+    let filename = format!("{name}-{version}-{arch}.pkg.tar.zst");
+    let package = Package {
+        name: name.to_owned(),
+        version: version.to_owned(),
+        arch: arch.to_owned(),
+        repo: repo.to_owned(),
+        filename: filename.clone(),
+        sha256: String::new(),
+        size: data.len() as u64,
+        created_at: chrono::Utc::now(),
+    };
+    storage.store_package(&package, &data).await.unwrap();
+    (data, filename)
 }
