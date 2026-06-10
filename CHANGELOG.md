@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v2.10.0 - 2026-06-09
+#### Features
+- (**repo**) support HTTP byte ranges for package downloads - (3644906) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**packaging**) drop stale nginx config, deployment uses Caddy - (c2286fe) - Neale Swinnerton
+
+- - -
+
 ## v2.9.0 - 2026-06-08
 #### Features
 - (**cli**) add shell completions for sw1nn-pkg-ctl - (f36dd9f) - Neale Swinnerton
