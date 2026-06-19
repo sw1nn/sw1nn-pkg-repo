@@ -1,5 +1,5 @@
 use byte_unit::{Byte, UnitType};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use colored::Colorize;
 use glob::Pattern;
@@ -29,7 +29,7 @@ struct Args {
     command: Option<Commands>,
 
     /// Path(s) to package file(s) (.pkg.tar.zst) - for backwards compatibility
-    #[arg(trailing_var_arg = true)]
+    #[arg(trailing_var_arg = true, value_hint = ValueHint::FilePath)]
     package_files: Vec<String>,
 
     /// Color output mode (also respects NO_COLOR and FORCE_COLOR env vars)
@@ -58,6 +58,7 @@ enum Commands {
     /// Upload package(s) to the repository
     Upload {
         /// Path(s) to package file(s) (.pkg.tar.zst)
+        #[arg(value_hint = ValueHint::FilePath)]
         package_files: Vec<String>,
     },
     /// Delete package version(s) from the repository
@@ -78,6 +79,7 @@ enum Commands {
     /// Replace an erroneously uploaded package (interactive confirmation required)
     Replace {
         /// Path to the replacement package file (.pkg.tar.zst)
+        #[arg(value_hint = ValueHint::FilePath)]
         package_file: String,
         /// Repository name (required if package exists in multiple repos)
         #[arg(short, long)]
