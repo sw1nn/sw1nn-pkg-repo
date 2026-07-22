@@ -116,8 +116,21 @@ Add the repository to your `/etc/pacman.conf`:
 
 ```ini
 [sw1nn]
-SigLevel = Optional TrustAll
+SigLevel = Required DatabaseOptional TrustedOnly
 Server = http://localhost:3000/$repo/os/$arch
+```
+
+`Required` rejects any unsigned package; `TrustedOnly` requires the
+signing key to be in your local pacman keyring; `DatabaseOptional`
+allows the repo database itself to be unsigned (the server does not
+sign the `.db`/`.files` databases).
+
+Import and locally sign the packaging key before first use, otherwise
+pacman will reject every package:
+
+```bash
+sudo pacman-key --recv-keys <KEYID>
+sudo pacman-key --lsign-key <KEYID>
 ```
 
 Then update and install packages:
