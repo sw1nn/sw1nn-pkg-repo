@@ -54,6 +54,7 @@ pub async fn setup_test_app_with_storage() -> (Router, Arc<Storage>) {
         upload_store,
         db_update: db_update_handle,
         http_client: reqwest::Client::new(),
+        keyring: sw1nn_pkg_repo::signature::Keyring::default(),
     });
 
     // Build API routes
@@ -105,6 +106,7 @@ pub async fn setup_test_app_with_auth(auth: sw1nn_pkg_repo::config::AuthConfig) 
         upload_store,
         db_update: db_update_handle,
         http_client: reqwest::Client::new(),
+        keyring: sw1nn_pkg_repo::signature::Keyring::default(),
     });
 
     let (api_router, api_doc) = create_api_router(state.clone()).split_for_parts();
@@ -182,6 +184,7 @@ pub async fn seed_package(
         sha256: String::new(),
         size: data.len() as u64,
         created_at: chrono::Utc::now(),
+        signature: None,
     };
     storage.store_package(&package, &data).await.unwrap();
     (data, filename)

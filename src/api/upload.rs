@@ -364,6 +364,7 @@ pub async fn complete_upload(
         sha256,
         size,
         created_at: Utc::now(),
+        signature: None,
     };
 
     // Move assembled file to permanent storage (without loading into memory)

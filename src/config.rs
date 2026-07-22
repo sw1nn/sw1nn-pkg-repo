@@ -48,6 +48,12 @@ pub struct StorageConfig {
 
     #[serde(default = "default_auto_cleanup_enabled")]
     pub auto_cleanup_enabled: bool,
+
+    /// Path to an ASCII-armored OpenPGP keyring of trusted signing keys.
+    /// When set, package signatures are verified against it and reported
+    /// as good/bad; when unset, signatures are reported without a verdict.
+    #[serde(default)]
+    pub signing_keyring: Option<PathBuf>,
 }
 
 fn default_host() -> String {
@@ -179,6 +185,7 @@ impl Default for Config {
                 default_repo: default_repo_name(),
                 default_arch: default_arch(),
                 auto_cleanup_enabled: default_auto_cleanup_enabled(),
+                signing_keyring: None,
             },
             auth: None,
         }

@@ -8,6 +8,7 @@ use crate::db_actor::DbUpdateHandle;
 use crate::error::{Result, ResultIoExt};
 use crate::metadata::{extract_pkginfo, generate_files_db, generate_repo_db};
 use crate::models::{Package, PackageQuery};
+use crate::signature::Keyring;
 use crate::storage::Storage;
 use crate::upload::UploadSessionStore;
 use axum::{
@@ -27,6 +28,7 @@ pub struct AppState {
     pub upload_store: UploadSessionStore,
     pub db_update: DbUpdateHandle,
     pub http_client: reqwest::Client,
+    pub keyring: Keyring,
 }
 
 /// List packages with optional filtering
@@ -71,6 +73,13 @@ pub async fn list_packages(
 
     if let Some(ref arch_filter) = query.arch {
         packages.retain(|p| &p.arch == arch_filter);
+    }
+
+    // Populate detached-signature details for each returned package.
+    for pkg in &mut packages {
+        if let Ok(path) = state.storage.package_path(&pkg.repo, &pkg.filename) {
+            pkg.signature = crate::signature::inspect(&path, &state.keyring);
+        }
     }
 
     Ok(Json(packages))
@@ -316,6 +325,7 @@ mod tests {
             sha256: String::new(),
             size: 0,
             created_at: Utc::now(),
+            signature: None,
         }
     }
 

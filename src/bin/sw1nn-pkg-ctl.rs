@@ -108,6 +108,9 @@ enum Commands {
         /// Reverse sort order
         #[arg(short = 'r', long)]
         reverse: bool,
+        /// Show a column with signature key ID, signer and validity
+        #[arg(long)]
+        show_signature: bool,
     },
     /// Log in to the repository via GitHub
     Login,
@@ -245,9 +248,19 @@ async fn main() {
             unit,
             sort,
             reverse,
+            show_signature,
         }) => {
             run_list(
-                &client, &base_url, name, repo, arch, json, unit, sort, reverse,
+                &client,
+                &base_url,
+                name,
+                repo,
+                arch,
+                json,
+                unit,
+                sort,
+                reverse,
+                show_signature,
             )
             .await;
         }
@@ -726,6 +739,7 @@ async fn run_list(
     size_unit: SizeUnit,
     sort_field: SortField,
     reverse: bool,
+    show_signature: bool,
 ) {
     let result = list_packages(client, base_url).await;
 
@@ -764,7 +778,7 @@ async fn run_list(
             if json_output {
                 print_packages_json(&packages);
             } else {
-                print_packages_table(&packages, size_unit);
+                print_packages_table(&packages, size_unit, show_signature);
             }
         }
         Err(e) => {
@@ -801,7 +815,7 @@ fn print_packages_json(packages: &[Package]) {
     }
 }
 
-fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
+fn print_packages_table(packages: &[Package], size_unit: SizeUnit, show_signature: bool) {
     if packages.is_empty() {
         println!("{}", "No packages found.".yellow());
         return;
@@ -828,21 +842,34 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
         .max()
         .unwrap_or(4)
         .max(4);
+    // The SIG column holds a single visible glyph; a fixed slot keeps
+    // alignment simple despite the ANSI colour codes around it.
+    let sig_width = 3;
 
     // Print header
+    let sig_col = format!("{:sig_width$}", "SIG");
+    let sig_detail_header = if show_signature {
+        format!("  {}", "SIGNATURE".cyan().bold())
+    } else {
+        String::new()
+    };
     println!(
-        "{:name_width$}  {:version_width$}  {:arch_width$}  {:repo_width$}  {:>10}  {}",
+        "{}  {:name_width$}  {:version_width$}  {:arch_width$}  {:repo_width$}  {:>10}  {}{}",
+        sig_col.cyan().bold(),
         "NAME".cyan().bold(),
         "VERSION".cyan().bold(),
         "ARCH".cyan().bold(),
         "REPO".cyan().bold(),
         "SIZE".cyan().bold(),
         "CREATED".cyan().bold(),
+        sig_detail_header,
     );
     println!(
         "{}",
-        "-".repeat(name_width + version_width + arch_width + repo_width + 10 + 20 + 12)
-            .bright_black()
+        "-".repeat(
+            sig_width + 2 + name_width + version_width + arch_width + repo_width + 10 + 20 + 12
+        )
+        .bright_black()
     );
 
     // Print rows
@@ -851,14 +878,22 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
         let created_str = pkg.created_at.format("%Y-%m-%d %H:%M").to_string();
 
         let version_str = format_version(&pkg.version, version_width);
+        let icon = signature_icon(pkg);
+        let detail = if show_signature {
+            format!("  {}", signature_detail(pkg))
+        } else {
+            String::new()
+        };
         println!(
-            "{:name_width$}  {}  {:arch_width$}  {:repo_width$}  {:>10}  {}",
+            "{}  {:name_width$}  {}  {:arch_width$}  {:repo_width$}  {:>10}  {}{}",
+            icon,
             pkg.name.green(),
             version_str,
             pkg.arch,
             pkg.repo,
             size_str.bright_black(),
             created_str.bright_black(),
+            detail,
         );
     }
 
@@ -868,6 +903,43 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit) {
         "Total:".cyan().bold(),
         packages.len().to_string().yellow()
     );
+}
+
+/// A fixed-width signed/unsigned glyph for the SIG column.
+/// ✓ = signed & verified good, ✗ = unsigned, ? = signed but not verified
+/// (or verification failed).
+fn signature_icon(pkg: &Package) -> String {
+    let glyph = match &pkg.signature {
+        None => "✗".red(),
+        Some(sig) => match sig.valid {
+            Some(true) => "✓".green(),
+            Some(false) => "✗".red().bold(),
+            None => "?".yellow(),
+        },
+    };
+    // Pad to the 3-wide SIG slot; the glyph is one visible column.
+    format!("{glyph}  ")
+}
+
+/// Human-readable signature details for the --show-signature column.
+fn signature_detail(pkg: &Package) -> String {
+    match &pkg.signature {
+        None => "—".bright_black().to_string(),
+        Some(sig) => {
+            let key = sig.key_id.yellow();
+            let signer = sig
+                .signer
+                .as_deref()
+                .map(|s| format!(" {s}"))
+                .unwrap_or_default();
+            let verdict = match sig.valid {
+                Some(true) => " (good)".green().to_string(),
+                Some(false) => " (BAD)".red().bold().to_string(),
+                None => String::new(),
+            };
+            format!("{key}{signer}{verdict}")
+        }
+    }
 }
 
 fn format_size(bytes: u64, unit: SizeUnit) -> String {

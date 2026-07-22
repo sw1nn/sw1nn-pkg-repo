@@ -7,6 +7,7 @@ pub mod metadata;
 pub mod metrics;
 pub mod models;
 pub mod repo;
+pub mod signature;
 pub mod storage;
 pub mod upload;
 
@@ -81,6 +82,22 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
     // Spawn background gauge collector
     metrics::spawn_gauge_collector(Arc::clone(&storage));
 
+    // Load the trusted signing keyring, if configured. A configured but
+    // unreadable keyring is a misconfiguration — fail loudly rather than
+    // silently reporting every signature as unverified.
+    let keyring = match &config.storage.signing_keyring {
+        Some(path) => {
+            let kr = signature::Keyring::load(path)
+                .unwrap_or_else(|e| panic!("failed to load signing keyring {path:?}: {e}"));
+            tracing::info!(keyring = ?path, "Loaded signing keyring for signature verification");
+            kr
+        }
+        None => {
+            tracing::info!("No signing keyring configured; signatures reported without a verdict");
+            signature::Keyring::default()
+        }
+    };
+
     // Create shared state
     let state = Arc::new(AppState {
         storage,
@@ -88,6 +105,7 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
         upload_store,
         db_update: db_update_handle,
         http_client: reqwest::Client::new(),
+        keyring,
     });
 
     // Build API routes using utoipa_axum router

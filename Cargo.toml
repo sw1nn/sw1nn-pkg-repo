@@ -63,5 +63,9 @@ tar = "0.4"
 flate2 = "1.0"
 zstd = "0.13"
 
+# OpenPGP signature verification (openssl backend avoids a nettle build dep)
+sequoia-openpgp = { version = "2.4", default-features = false, features = ["crypto-openssl"] }
+anyhow = "1.0"
+
 [dev-dependencies]
 tempfile = "3.27"
