@@ -2,11 +2,11 @@
 pkgbase=sw1nn-pkg-repo
 pkgname=('sw1nn-pkg-repo' 'sw1nn-pkg-ctl')
 pkgver=2.11.0
-pkgrel=1
+pkgrel=2
 arch=('x86_64')
 url="https://github.com/sw1nn/sw1nn-pkg-repo"
 license=('MIT')
-makedepends=('rust' 'cargo' 'git' 'zstd')
+makedepends=('rust' 'cargo' 'git' 'zstd' 'clang')
 source=("$pkgbase::git+https://github.com/sw1nn/sw1nn-pkg-repo.git#tag=v$pkgver")
 sha256sums=('SKIP')
 options=('!lto')
