@@ -1,6 +1,21 @@
 # Changelog
 
 - - -
+## v2.11.0 - 2026-07-22
+#### Features
+- (**list**) report package signature status in list API and CLI - (df5efd7) - Neale Swinnerton
+#### Bug Fixes
+- (**completion**) add FilePath value hint so package-file args complete - (57dff2c) - Neale Swinnerton
+- (**direnv**) remove .envrc - (890ae5b) - Neale Swinnerton
+#### Documentation
+- (**readme**) recommend enforced package signature verification - (1252d49) - Neale Swinnerton
+#### Refactoring
+- (**release**) move packaging into just package recipe - (fe1b441) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**env**) add direnv .envrc and .env.example - (fc3c000) - Neale Swinnerton
+
+- - -
+
 ## v2.10.0 - 2026-06-09
 #### Features
 - (**repo**) support HTTP byte ranges for package downloads - (3644906) - Neale Swinnerton
