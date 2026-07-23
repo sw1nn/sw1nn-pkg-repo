@@ -934,7 +934,7 @@ fn signature_detail(pkg: &Package) -> String {
             let signer = sig
                 .signer
                 .as_deref()
-                .map(|s| format!("({s})"))
+                .map(|s| format!("({s})").green().to_string())
                 .unwrap_or_default();
             let verdict = match sig.valid {
                 Some(true) => " (good)".green().to_string(),
