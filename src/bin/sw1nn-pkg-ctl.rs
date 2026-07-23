@@ -104,7 +104,16 @@ enum Commands {
         /// Reverse sort order
         #[arg(short = 'r', long)]
         reverse: bool,
-        /// Show a column with signature key ID, signer and validity
+        /// Comma-separated list of columns to display, in order
+        #[arg(
+            short = 'c',
+            long,
+            value_enum,
+            value_delimiter = ',',
+            default_value = "sig,name,version,created"
+        )]
+        columns: Vec<Column>,
+        /// Append the signature details column (deprecated: use --columns signature)
         #[arg(long)]
         full_signature: bool,
     },
@@ -126,6 +135,45 @@ enum SizeUnit {
     Decimal,
     /// Raw bytes
     Bytes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Column {
+    /// Signed/unsigned status glyph
+    Sig,
+    /// Package name
+    Name,
+    /// Package version
+    Version,
+    /// Architecture
+    Arch,
+    /// Repository name
+    Repo,
+    /// Package size
+    Size,
+    /// Creation timestamp
+    Created,
+    /// Signature key ID, signer and validity
+    Signature,
+}
+
+impl Column {
+    fn header(self) -> &'static str {
+        match self {
+            Column::Sig => "SIG",
+            Column::Name => "NAME",
+            Column::Version => "VERSION",
+            Column::Arch => "ARCH",
+            Column::Repo => "REPO",
+            Column::Size => "SIZE",
+            Column::Created => "CREATED",
+            Column::Signature => "SIGNATURE",
+        }
+    }
+
+    fn right_aligned(self) -> bool {
+        matches!(self, Column::Size)
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -244,19 +292,14 @@ async fn main() {
             unit,
             sort,
             reverse,
+            mut columns,
             full_signature,
         }) => {
+            if full_signature && !columns.contains(&Column::Signature) {
+                columns.push(Column::Signature);
+            }
             run_list(
-                &client,
-                &base_url,
-                name,
-                repo,
-                arch,
-                json,
-                unit,
-                sort,
-                reverse,
-                full_signature,
+                &client, &base_url, name, repo, arch, json, unit, sort, reverse, &columns,
             )
             .await;
         }
@@ -731,7 +774,7 @@ async fn run_list(
     size_unit: SizeUnit,
     sort_field: SortField,
     reverse: bool,
-    full_signature: bool,
+    columns: &[Column],
 ) {
     let result = list_packages(client, base_url).await;
 
@@ -770,7 +813,7 @@ async fn run_list(
             if json_output {
                 print_packages_json(&packages);
             } else {
-                print_packages_table(&packages, size_unit, full_signature);
+                print_packages_table(&packages, size_unit, columns);
             }
         }
         Err(e) => {
@@ -807,90 +850,115 @@ fn print_packages_json(packages: &[Package]) {
     }
 }
 
-fn print_packages_table(packages: &[Package], size_unit: SizeUnit, full_signature: bool) {
+/// A rendered table cell: possibly ANSI-coloured text plus its visible
+/// width, which the colour codes don't count towards.
+struct Cell {
+    text: String,
+    width: usize,
+}
+
+fn pad(cell: &Cell, width: usize, right_aligned: bool) -> String {
+    let padding = " ".repeat(width.saturating_sub(cell.width));
+    if right_aligned {
+        format!("{padding}{}", cell.text)
+    } else {
+        format!("{}{padding}", cell.text)
+    }
+}
+
+fn render_cell(pkg: &Package, column: Column, size_unit: SizeUnit) -> Cell {
+    match column {
+        Column::Sig => Cell {
+            text: signature_icon(pkg),
+            width: 1,
+        },
+        Column::Name => Cell {
+            text: pkg.name.green().to_string(),
+            width: pkg.name.len(),
+        },
+        Column::Version => Cell {
+            text: format_version(&pkg.version),
+            width: pkg.version.len(),
+        },
+        Column::Arch => Cell {
+            text: pkg.arch.clone(),
+            width: pkg.arch.len(),
+        },
+        Column::Repo => Cell {
+            text: pkg.repo.clone(),
+            width: pkg.repo.len(),
+        },
+        Column::Size => {
+            let size = format_size(pkg.size, size_unit);
+            Cell {
+                width: size.len(),
+                text: size.bright_black().to_string(),
+            }
+        }
+        Column::Created => {
+            let created = pkg.created_at.format("%Y-%m-%d %H:%M").to_string();
+            Cell {
+                width: created.len(),
+                text: created.bright_black().to_string(),
+            }
+        }
+        Column::Signature => signature_detail(pkg),
+    }
+}
+
+fn print_packages_table(packages: &[Package], size_unit: SizeUnit, columns: &[Column]) {
     if packages.is_empty() {
         println!("{}", "No packages found.".yellow());
         return;
     }
 
-    // Calculate column widths
-    let name_width = packages
+    let rows: Vec<Vec<Cell>> = packages
         .iter()
-        .map(|p| p.name.len())
-        .max()
-        .unwrap_or(4)
-        .max(4);
-    let version_width = packages
-        .iter()
-        .map(|p| p.version.len())
-        .max()
-        .unwrap_or(7)
-        .max(7);
-    let arch_width = packages
-        .iter()
-        .map(|p| p.arch.len())
-        .max()
-        .unwrap_or(4)
-        .max(4);
-    let repo_width = packages
-        .iter()
-        .map(|p| p.repo.len())
-        .max()
-        .unwrap_or(4)
-        .max(4);
-    // The SIG column holds a single visible glyph; a fixed slot keeps
-    // alignment simple despite the ANSI colour codes around it.
-    let sig_width = 3;
+        .map(|pkg| {
+            columns
+                .iter()
+                .map(|&col| render_cell(pkg, col, size_unit))
+                .collect()
+        })
+        .collect();
 
-    // Print header
-    let sig_col = format!("{:sig_width$}", "SIG");
-    let sig_detail_header = if full_signature {
-        format!("  {}", "SIGNATURE".cyan().bold())
-    } else {
-        String::new()
-    };
-    println!(
-        "{}  {:name_width$}  {:version_width$}  {:arch_width$}  {:repo_width$}  {:>10}  {}{}",
-        sig_col.cyan().bold(),
-        "NAME".cyan().bold(),
-        "VERSION".cyan().bold(),
-        "ARCH".cyan().bold(),
-        "REPO".cyan().bold(),
-        "SIZE".cyan().bold(),
-        "CREATED".cyan().bold(),
-        sig_detail_header,
-    );
-    println!(
-        "{}",
-        "-".repeat(
-            sig_width + 2 + name_width + version_width + arch_width + repo_width + 10 + 20 + 12
-        )
-        .bright_black()
-    );
+    let widths: Vec<usize> = columns
+        .iter()
+        .enumerate()
+        .map(|(i, col)| {
+            rows.iter()
+                .map(|row| row[i].width)
+                .max()
+                .unwrap_or(0)
+                .max(col.header().len())
+        })
+        .collect();
 
-    // Print rows
-    for pkg in packages {
-        let size_str = format_size(pkg.size, size_unit);
-        let created_str = pkg.created_at.format("%Y-%m-%d %H:%M").to_string();
+    let header_line = columns
+        .iter()
+        .zip(&widths)
+        .map(|(col, &width)| {
+            let cell = Cell {
+                text: col.header().cyan().bold().to_string(),
+                width: col.header().len(),
+            };
+            pad(&cell, width, col.right_aligned())
+        })
+        .collect::<Vec<_>>()
+        .join("  ");
+    println!("{}", header_line.trim_end());
 
-        let version_str = format_version(&pkg.version, version_width);
-        let icon = signature_icon(pkg);
-        let detail = if full_signature {
-            format!("  {}", signature_detail(pkg))
-        } else {
-            String::new()
-        };
-        println!(
-            "{}  {:name_width$}  {}  {:arch_width$}  {:repo_width$}  {:>10}  {}{}",
-            icon,
-            pkg.name.green(),
-            version_str,
-            pkg.arch,
-            pkg.repo,
-            size_str.bright_black(),
-            created_str.bright_black(),
-            detail,
-        );
+    let total_width = widths.iter().sum::<usize>() + 2 * widths.len().saturating_sub(1);
+    println!("{}", "-".repeat(total_width).bright_black());
+
+    for row in &rows {
+        let line = row
+            .iter()
+            .zip(columns.iter().zip(&widths))
+            .map(|(cell, (col, &width))| pad(cell, width, col.right_aligned()))
+            .collect::<Vec<_>>()
+            .join("  ");
+        println!("{}", line.trim_end());
     }
 
     println!();
@@ -901,39 +969,47 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit, full_signatur
     );
 }
 
-/// A fixed-width signed/unsigned glyph for the SIG column.
+/// A signed/unsigned glyph for the SIG column.
 /// ✓ = signed & verified good, ✗ = unsigned, ? = signed but not verified
 /// (or verification failed).
 fn signature_icon(pkg: &Package) -> String {
-    let glyph = match &pkg.signature {
-        None => "✗".red(),
+    match &pkg.signature {
+        None => "✗".red().to_string(),
         Some(sig) => match sig.valid {
-            Some(true) => "✓".green(),
-            Some(false) => "✗".red().bold(),
-            None => "?".yellow(),
+            Some(true) => "✓".green().to_string(),
+            Some(false) => "✗".red().bold().to_string(),
+            None => "?".yellow().to_string(),
         },
-    };
-    // Pad to the 3-wide SIG slot; the glyph is one visible column.
-    format!("{glyph}  ")
+    }
 }
 
-/// Human-readable signature details for the --full-signature column.
-fn signature_detail(pkg: &Package) -> String {
+/// Human-readable signature details for the SIGNATURE column.
+fn signature_detail(pkg: &Package) -> Cell {
     match &pkg.signature {
-        None => "—".bright_black().to_string(),
+        None => Cell {
+            text: "—".bright_black().to_string(),
+            width: 1,
+        },
         Some(sig) => {
-            let key = sig.key_id.yellow();
-            let signer = sig
+            let signer_plain = sig
                 .signer
                 .as_deref()
-                .map(|s| format!("({s})").green().to_string())
+                .map(|s| format!("({s})"))
                 .unwrap_or_default();
+            let verdict_plain = match sig.valid {
+                Some(true) => " (good)",
+                Some(false) => " (BAD)",
+                None => "",
+            };
             let verdict = match sig.valid {
-                Some(true) => " (good)".green().to_string(),
-                Some(false) => " (BAD)".red().bold().to_string(),
+                Some(true) => verdict_plain.green().to_string(),
+                Some(false) => verdict_plain.red().bold().to_string(),
                 None => String::new(),
             };
-            format!("{key}{signer}{verdict}")
+            Cell {
+                width: sig.key_id.len() + signer_plain.len() + verdict_plain.len(),
+                text: format!("{}{}{verdict}", sig.key_id.yellow(), signer_plain.green()),
+            }
         }
     }
 }
@@ -947,22 +1023,18 @@ fn format_size(bytes: u64, unit: SizeUnit) -> String {
     }
 }
 
-/// Format version string with pkgver in yellow and pkgrel in grey, left-aligned to width
-fn format_version(version: &str, width: usize) -> String {
+/// Format version string with pkgver in yellow and pkgrel in grey
+fn format_version(version: &str) -> String {
     // Arch package versions are formatted as pkgver-pkgrel
     // e.g., "2.1.0-1" where "2.1.0" is pkgver and "1" is pkgrel
-    let colored = if let Some(last_dash_pos) = version.rfind('-') {
+    if let Some(last_dash_pos) = version.rfind('-') {
         let pkgver = &version[..last_dash_pos];
         let pkgrel = &version[last_dash_pos..]; // includes the '-'
         format!("{}{}", pkgver.yellow(), pkgrel.bright_black())
     } else {
         // No pkgrel separator found, just color the whole thing yellow
         version.yellow().to_string()
-    };
-
-    // Left-align by appending spaces (ANSI codes don't count for visible width)
-    let padding = width.saturating_sub(version.len());
-    format!("{colored}{:padding$}", "")
+    }
 }
 
 /// Upload a package using the simple (non-chunked) API
