@@ -110,7 +110,7 @@ enum Commands {
         reverse: bool,
         /// Show a column with signature key ID, signer and validity
         #[arg(long)]
-        show_signature: bool,
+        full_signature: bool,
     },
     /// Log in to the repository via GitHub
     Login,
@@ -248,7 +248,7 @@ async fn main() {
             unit,
             sort,
             reverse,
-            show_signature,
+            full_signature,
         }) => {
             run_list(
                 &client,
@@ -260,7 +260,7 @@ async fn main() {
                 unit,
                 sort,
                 reverse,
-                show_signature,
+                full_signature,
             )
             .await;
         }
@@ -739,7 +739,7 @@ async fn run_list(
     size_unit: SizeUnit,
     sort_field: SortField,
     reverse: bool,
-    show_signature: bool,
+    full_signature: bool,
 ) {
     let result = list_packages(client, base_url).await;
 
@@ -778,7 +778,7 @@ async fn run_list(
             if json_output {
                 print_packages_json(&packages);
             } else {
-                print_packages_table(&packages, size_unit, show_signature);
+                print_packages_table(&packages, size_unit, full_signature);
             }
         }
         Err(e) => {
@@ -815,7 +815,7 @@ fn print_packages_json(packages: &[Package]) {
     }
 }
 
-fn print_packages_table(packages: &[Package], size_unit: SizeUnit, show_signature: bool) {
+fn print_packages_table(packages: &[Package], size_unit: SizeUnit, full_signature: bool) {
     if packages.is_empty() {
         println!("{}", "No packages found.".yellow());
         return;
@@ -828,8 +828,12 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit, show_signatur
         .max()
         .unwrap_or(4)
         .max(4);
-    // Fixed width for version column
-    let version_width = 12;
+    let version_width = packages
+        .iter()
+        .map(|p| p.version.len())
+        .max()
+        .unwrap_or(7)
+        .max(7);
     let arch_width = packages
         .iter()
         .map(|p| p.arch.len())
@@ -848,7 +852,7 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit, show_signatur
 
     // Print header
     let sig_col = format!("{:sig_width$}", "SIG");
-    let sig_detail_header = if show_signature {
+    let sig_detail_header = if full_signature {
         format!("  {}", "SIGNATURE".cyan().bold())
     } else {
         String::new()
@@ -879,7 +883,7 @@ fn print_packages_table(packages: &[Package], size_unit: SizeUnit, show_signatur
 
         let version_str = format_version(&pkg.version, version_width);
         let icon = signature_icon(pkg);
-        let detail = if show_signature {
+        let detail = if full_signature {
             format!("  {}", signature_detail(pkg))
         } else {
             String::new()
@@ -921,7 +925,7 @@ fn signature_icon(pkg: &Package) -> String {
     format!("{glyph}  ")
 }
 
-/// Human-readable signature details for the --show-signature column.
+/// Human-readable signature details for the --full-signature column.
 fn signature_detail(pkg: &Package) -> String {
     match &pkg.signature {
         None => "—".bright_black().to_string(),
@@ -930,7 +934,7 @@ fn signature_detail(pkg: &Package) -> String {
             let signer = sig
                 .signer
                 .as_deref()
-                .map(|s| format!(" {s}"))
+                .map(|s| format!("({s})"))
                 .unwrap_or_default();
             let verdict = match sig.valid {
                 Some(true) => " (good)".green().to_string(),
