@@ -28,10 +28,6 @@ struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Path(s) to package file(s) (.pkg.tar.zst) - for backwards compatibility
-    #[arg(trailing_var_arg = true, value_hint = ValueHint::FilePath)]
-    package_files: Vec<String>,
-
     /// Color output mode (also respects NO_COLOR and FORCE_COLOR env vars)
     #[arg(
         long,
@@ -282,14 +278,10 @@ async fn main() {
             );
         }
         None => {
-            // Backwards compatibility: treat positional args as upload
-            if args.package_files.is_empty() {
-                tracing::error!(
-                    "No command specified. Use 'upload', 'delete', 'replace', 'list', 'login', 'logout', or 'status' subcommand, or provide package files directly."
-                );
-                process::exit(1);
-            }
-            run_upload(&client, &base_url, args.package_files).await;
+            tracing::error!(
+                "No command specified. Use 'upload', 'delete', 'replace', 'list', 'login', 'logout', or 'status' subcommand."
+            );
+            process::exit(1);
         }
     }
 }
