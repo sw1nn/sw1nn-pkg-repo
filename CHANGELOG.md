@@ -1,6 +1,16 @@
 # Changelog
 
 - - -
+## v2.12.0 - 2026-07-23
+#### Features
+- (**ctl**) improve list signature display and version column - (e99a8ac) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**arch**) add clang build dependency and bump pkgrel - (7c03af0) - Neale Swinnerton
+#### Style
+- (**ctl**) color signer uid green in signature column - (154a57e) - Neale Swinnerton
+
+- - -
+
 ## v2.11.0 - 2026-07-22
 #### Features
 - (**list**) report package signature status in list API and CLI - (df5efd7) - Neale Swinnerton
