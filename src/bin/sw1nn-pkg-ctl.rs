@@ -60,16 +60,16 @@ enum Commands {
     /// Delete package version(s) from the repository
     Delete {
         /// Package name
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::Other)]
         name: String,
         /// Version(s) to delete - can be exact (1.0.0-1) or semver ranges (^1.0.0)
-        #[arg(short = 'v', long = "pkg-version", required = true)]
+        #[arg(short = 'v', long = "pkg-version", required = true, value_hint = ValueHint::Other)]
         pkg_version: Vec<String>,
         /// Repository name (optional)
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::Other)]
         repo: Option<String>,
         /// Architecture (optional)
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::Other)]
         arch: Option<String>,
     },
     /// Replace an erroneously uploaded package (interactive confirmation required)
@@ -78,19 +78,19 @@ enum Commands {
         #[arg(value_hint = ValueHint::FilePath)]
         package_file: String,
         /// Repository name (required if package exists in multiple repos)
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::Other)]
         repo: Option<String>,
     },
     /// List packages in the repository
     List {
         /// Filter packages by name (substring match)
-        #[arg(short = 'n', long)]
+        #[arg(short = 'n', long, value_hint = ValueHint::Other)]
         name: Option<String>,
         /// Filter by repository name
-        #[arg(short = 'R', long)]
+        #[arg(short = 'R', long, value_hint = ValueHint::Other)]
         repo: Option<String>,
         /// Filter by architecture
-        #[arg(short = 'a', long)]
+        #[arg(short = 'a', long, value_hint = ValueHint::Other)]
         arch: Option<String>,
         /// Output as JSON instead of table
         #[arg(short = 'j', long)]

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueHint};
 use std::path::PathBuf;
 use sw1nn_pkg_repo::run_service;
 use tokio::fs;
@@ -11,7 +11,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(version = VERSION)]
 struct Args {
     /// Path to configuration file
-    #[arg(short, long, value_name = "FILE", global = true)]
+    #[arg(short, long, value_name = "FILE", global = true, value_hint = ValueHint::FilePath)]
     config: Option<String>,
 
     #[command(subcommand)]
@@ -25,7 +25,7 @@ enum Commands {
     /// Migrate from old storage structure to new flat structure
     Migrate {
         /// Data directory path (defaults to config value)
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
         data_path: Option<PathBuf>,
         /// Dry run - show what would be done without making changes
         #[arg(long)]
