@@ -1,6 +1,17 @@
 # Changelog
 
 - - -
+## v2.13.0 - 2026-08-26
+#### Features
+- (**ctl**) configurable columns for list output - (d3515b3) - Neale Swinnerton
+- (**release**) assert releases run from main - (4f562eb) - Neale Swinnerton
+#### Bug Fixes
+- (**completion**) make bash completion reach its own case branches - (d6426a0) - Neale Swinnerton
+- (**completion**) correct value hints for shell completions - (f5a9ace) - Neale Swinnerton
+- (**completion**) drop top-level package-files positional shadowing subcommands - (1a57bf6) - Neale Swinnerton
+
+- - -
+
 ## v2.12.0 - 2026-07-23
 #### Features
 - (**ctl**) improve list signature display and version column - (e99a8ac) - Neale Swinnerton
