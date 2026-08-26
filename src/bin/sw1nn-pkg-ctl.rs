@@ -1,12 +1,12 @@
 use byte_unit::{Byte, UnitType};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
+use clap::{Arg, CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use colored::Colorize;
 use glob::Pattern;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process;
 use tokio::fs::File;
@@ -313,12 +313,7 @@ async fn main() {
             run_status();
         }
         Some(Commands::Completions { shell }) => {
-            clap_complete::generate(
-                shell,
-                &mut Args::command(),
-                "sw1nn-pkg-ctl",
-                &mut std::io::stdout(),
-            );
+            print!("{}", completion_script(shell));
         }
         None => {
             tracing::error!(
@@ -1553,4 +1548,271 @@ fn print_upload_success(package: &Package, index: usize, total: usize) {
         package.created_at.format("%Y-%m-%d %H:%M:%S UTC")
     );
     println!();
+}
+
+/// Render the completion script for `shell`.
+fn completion_script(shell: Shell) -> String {
+    let mut command = Args::command();
+    let mut buf = Vec::new();
+    clap_complete::generate(shell, &mut command, BIN_NAME, &mut buf);
+    let script = String::from_utf8(buf).expect("clap_complete emits UTF-8");
+
+    match shell {
+        Shell::Bash => patch_bash(script, &command),
+        _ => script,
+    }
+}
+
+/// Repair two defects in the script that clap_complete 4.6 renders for bash.
+///
+/// The dispatch variable is built from `bin_name.replace('-', "__")` while the
+/// matching `case` labels use `bin_name.replace('-', "__subcmd__")`. A binary
+/// name that contains a hyphen therefore reaches no branch at all, and bash
+/// falls back to bare filename completion for every word. The generator also
+/// ignores `ValueHint` on positional arguments, which leaves the package file
+/// arguments with no file completion once the branches are reachable again.
+fn patch_bash(script: String, command: &clap::Command) -> String {
+    let script = script.replace(&dispatch_prefix("__subcmd__"), &dispatch_prefix("__"));
+    restore_positional_paths(&script, command)
+}
+
+/// The binary name as the bash script spells it, with `separator` for hyphens.
+fn dispatch_prefix(separator: &str) -> String {
+    BIN_NAME.replace('-', separator)
+}
+
+/// Complete paths in the branches of subcommands that take a path positional.
+fn restore_positional_paths(script: &str, command: &clap::Command) -> String {
+    let branches: BTreeMap<String, &str> = command
+        .get_subcommands()
+        .filter_map(|sub| {
+            let hint = sub
+                .get_positionals()
+                .map(Arg::get_value_hint)
+                .find(is_path)?;
+            let label = format!(
+                "{prefix}__subcmd__{name})",
+                prefix = dispatch_prefix("__"),
+                name = sub.get_name().replace('-', "__subcmd__")
+            );
+            let flag = if hint == ValueHint::DirPath {
+                "-d"
+            } else {
+                "-f"
+            };
+            Some((label, flag))
+        })
+        .collect();
+
+    let mut out = String::with_capacity(script.len());
+    let mut branch = Vec::new();
+    let mut flag = None;
+    // The `case "${prev}"` inside a branch ends its own arms with `;;`, so the
+    // end of the branch is the `;;` one level in from its label.
+    let mut end = String::new();
+
+    for line in script.lines() {
+        if flag.is_none()
+            && let Some(compgen) = branches.get(line.trim()).copied()
+        {
+            end = format!("{indent}    ;;", indent = indent_of(line));
+            flag = Some(compgen);
+        }
+
+        match flag {
+            None => {
+                out.push_str(line);
+                out.push('\n');
+            }
+            Some(compgen) => {
+                branch.push(line);
+                if line == end {
+                    out.push_str(&patch_branch(&branch, compgen));
+                    branch.clear();
+                    flag = None;
+                }
+            }
+        }
+    }
+
+    out
+}
+
+fn indent_of(line: &str) -> &str {
+    &line[..line.len() - line.trim_start().len()]
+}
+
+fn is_path(hint: &ValueHint) -> bool {
+    matches!(
+        hint,
+        ValueHint::AnyPath | ValueHint::FilePath | ValueHint::DirPath | ValueHint::ExecutablePath
+    )
+}
+
+/// Offer paths where the branch would otherwise fall back to the option list.
+///
+/// The word-position guard goes with it: a path can follow any number of
+/// options, so `COMP_CWORD` says nothing useful about where it appears.
+fn patch_branch(branch: &[&str], compgen: &str) -> String {
+    const OPTIONS: &str = r#"COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )"#;
+
+    let fallback = branch.iter().rposition(|line| line.trim() == OPTIONS);
+    let mut out = String::new();
+
+    for (position, line) in branch.iter().enumerate() {
+        let indent = indent_of(line);
+
+        if line.contains("|| ${COMP_CWORD} -eq") {
+            out.push_str(&format!("{indent}if [[ ${{cur}} == -* ]] ; then\n"));
+        } else if Some(position) == fallback {
+            out.push_str(&format!(
+                "{indent}COMPREPLY=( $(compgen {compgen} -- \"${{cur}}\") )\n"
+            ));
+            out.push_str(&format!(
+                "{indent}if [[ \"${{BASH_VERSINFO[0]}}\" -ge 4 ]]; then\n"
+            ));
+            out.push_str(&format!("{indent}    compopt -o filenames\n"));
+            out.push_str(&format!("{indent}fi\n"));
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error;
+    use std::path::Path;
+    use std::process::Command;
+
+    type TestResult = std::result::Result<(), Box<dyn Error>>;
+
+    /// Call the completion function the way bash calls it, for a part-typed
+    /// command line whose last word is the one being completed.
+    const DRIVER: &str = r#"
+        source "$1"
+        compopt() { return 0; }
+        shift
+        words=("$@")
+        COMP_WORDS=("${words[@]}")
+        COMP_CWORD=$(( ${#words[@]} - 1 ))
+        COMP_LINE="${words[*]}"
+        COMP_POINT=${#COMP_LINE}
+        COMPREPLY=()
+        "$COMPLETION_FN" "${words[0]}" "${words[COMP_CWORD]}" "${words[COMP_CWORD - 1]}"
+        printf '%s\n' ${COMPREPLY[@]+"${COMPREPLY[@]}"}
+    "#;
+
+    /// What the generated bash script offers for `words`, typed in `cwd`.
+    fn candidates(cwd: &Path, words: &[&str]) -> std::result::Result<Vec<String>, Box<dyn Error>> {
+        let script_dir = tempfile::tempdir()?;
+        let script = script_dir.path().join("completions.bash");
+        std::fs::write(&script, completion_script(Shell::Bash))?;
+
+        let output = Command::new("bash")
+            .args(["-c", DRIVER, "driver"])
+            .arg(&script)
+            .args(words)
+            .env("COMPLETION_FN", format!("_{}", dispatch_prefix("__")))
+            .current_dir(cwd)
+            .output()?;
+
+        assert!(
+            output.status.success(),
+            "driver failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        Ok(String::from_utf8(output.stdout)?
+            .lines()
+            .filter(|candidate| !candidate.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    #[test]
+    fn every_bash_dispatch_state_has_a_case_label() {
+        let script = completion_script(Shell::Bash);
+
+        let states: BTreeSet<&str> = script
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("cmd=\""))
+            .filter_map(|state| state.strip_suffix('"'))
+            .filter(|state| !state.is_empty())
+            .collect();
+        assert!(!states.is_empty(), "script sets no dispatch states");
+
+        let labels: BTreeSet<&str> = script
+            .lines()
+            .filter_map(|line| line.trim().strip_suffix(')'))
+            .collect();
+
+        for state in states {
+            assert!(labels.contains(state), "no case label for state `{state}`");
+        }
+    }
+
+    #[test]
+    fn completes_subcommands() -> TestResult {
+        let cwd = tempfile::tempdir()?;
+
+        let offered = candidates(cwd.path(), &[BIN_NAME, ""])?;
+
+        assert!(
+            offered.contains(&"upload".to_owned()),
+            "offered {offered:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn completes_package_files_for_upload() -> TestResult {
+        let cwd = tempfile::tempdir()?;
+        std::fs::write(cwd.path().join("hello-1.0.0-1-x86_64.pkg.tar.zst"), "")?;
+
+        let offered = candidates(cwd.path(), &[BIN_NAME, "upload", ""])?;
+
+        assert_eq!(offered, ["hello-1.0.0-1-x86_64.pkg.tar.zst"]);
+        Ok(())
+    }
+
+    #[test]
+    fn completes_package_files_for_replace() -> TestResult {
+        let cwd = tempfile::tempdir()?;
+        std::fs::write(cwd.path().join("hello-1.0.0-1-x86_64.pkg.tar.zst"), "")?;
+
+        let offered = candidates(cwd.path(), &[BIN_NAME, "replace", ""])?;
+
+        assert_eq!(offered, ["hello-1.0.0-1-x86_64.pkg.tar.zst"]);
+        Ok(())
+    }
+
+    #[test]
+    fn completes_options_after_a_leading_dash() -> TestResult {
+        let cwd = tempfile::tempdir()?;
+        std::fs::write(cwd.path().join("hello-1.0.0-1-x86_64.pkg.tar.zst"), "")?;
+
+        let offered = candidates(cwd.path(), &[BIN_NAME, "upload", "-"])?;
+
+        assert!(
+            offered.contains(&"--help".to_owned()),
+            "offered {offered:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn offers_no_files_for_a_package_name() -> TestResult {
+        let cwd = tempfile::tempdir()?;
+        std::fs::write(cwd.path().join("hello-1.0.0-1-x86_64.pkg.tar.zst"), "")?;
+
+        let offered = candidates(cwd.path(), &[BIN_NAME, "delete", "--name", ""])?;
+
+        assert!(offered.is_empty(), "offered {offered:?}");
+        Ok(())
+    }
 }
