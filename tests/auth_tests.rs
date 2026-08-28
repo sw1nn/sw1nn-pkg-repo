@@ -32,6 +32,7 @@ async fn test_write_endpoints_work_without_auth_config() -> Result<(), Box<dyn s
     let request_body = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 1048576,
+        "sha256": "abc123",
         "chunk_size": 1048576,
         "has_signature": false
     });
@@ -77,6 +78,7 @@ async fn test_write_endpoint_requires_auth_when_configured()
     let request_body = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 1048576,
+        "sha256": "abc123",
         "chunk_size": 1048576,
         "has_signature": false
     });
@@ -102,6 +104,7 @@ async fn test_write_endpoint_rejects_invalid_token() -> Result<(), Box<dyn std::
     let request_body = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 1048576,
+        "sha256": "abc123",
         "chunk_size": 1048576,
         "has_signature": false
     });
@@ -133,6 +136,7 @@ async fn test_write_endpoint_rejects_non_allowlisted_user() -> Result<(), Box<dy
     let request_body = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 1048576,
+        "sha256": "abc123",
         "chunk_size": 1048576,
         "has_signature": false
     });
@@ -160,6 +164,7 @@ async fn test_write_endpoint_succeeds_with_valid_token() -> Result<(), Box<dyn s
     let request_body = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 1048576,
+        "sha256": "abc123",
         "chunk_size": 1048576,
         "has_signature": false
     });

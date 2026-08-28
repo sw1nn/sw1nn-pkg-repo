@@ -238,6 +238,7 @@ async fn test_chunked_upload_wrong_chunk_size() {
     let init_request = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 2048,
+        "sha256": "abc123",
         "chunk_size": 1024,
         "has_signature": false
     });
@@ -293,6 +294,7 @@ async fn test_chunked_upload_invalid_chunk_number() {
     let init_request = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 2048,
+        "sha256": "abc123",
         "chunk_size": 1024,
         "has_signature": false
     });
@@ -348,6 +350,7 @@ async fn test_chunked_upload_abort() {
     let init_request = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 1024,
+        "sha256": "abc123",
         "chunk_size": 512,
         "has_signature": false
     });
@@ -416,6 +419,7 @@ async fn test_chunked_upload_complete_missing_chunks() {
     let init_request = json!({
         "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
         "size": 2048,
+        "sha256": "abc123",
         "chunk_size": 1024,
         "has_signature": false
     });
@@ -587,4 +591,130 @@ async fn test_chunked_upload_concurrent_sessions() {
     // Both should succeed
     assert_eq!(response1.status(), StatusCode::OK);
     assert_eq!(response2.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_chunked_upload_initiate_requires_sha256() {
+    let app = setup_test_app().await;
+
+    // Omit sha256 entirely; initiate must refuse an unverifiable upload.
+    let init_request = json!({
+        "filename": "test-pkg-1.0.0-x86_64.pkg.tar.zst",
+        "size": 2048,
+        "chunk_size": 1024,
+        "has_signature": false
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages/upload/initiate")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&init_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("sha256"));
+}
+
+#[tokio::test]
+async fn test_chunked_upload_sha256_mismatch_is_rejected() {
+    let app = setup_test_app().await;
+
+    let package_data = create_test_package("mismatch-test", "1.0.0", "x86_64");
+    let file_size = package_data.len() as u64;
+
+    // Declare a hash that cannot match the real package bytes.
+    let wrong_sha256 = "0".repeat(64);
+
+    let init_request = json!({
+        "filename": "mismatch-test-1.0.0-x86_64.pkg.tar.zst",
+        "size": file_size,
+        "sha256": wrong_sha256,
+        "chunk_size": file_size,
+        "has_signature": false
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/packages/upload/initiate")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&init_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let init_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let upload_id = init_response["upload_id"].as_str().unwrap();
+
+    // Upload the whole package as a single, correctly sized chunk.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/packages/upload/{}/chunks/1", upload_id))
+                .header("Content-Type", "application/octet-stream")
+                .body(Body::from(package_data.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let chunk_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // Complete with the correct chunk checksum but the wrong declared file hash;
+    // assembly must reject it rather than publish an unverified package.
+    let complete_request = json!({
+        "chunks": [{
+            "chunk_number": chunk_response["chunk_number"],
+            "checksum": chunk_response["checksum"]
+        }]
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/packages/upload/{}/complete", upload_id))
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&complete_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("Checksum mismatch")
+    );
 }

@@ -522,17 +522,20 @@ impl UploadSessionStore {
             });
         }
 
-        // Verify SHA256 if provided
-        if let Some(expected_hash) = &session.sha256 {
-            let actual_hash = format!("{:x}", hasher.finalize());
-            if &actual_hash != expected_hash {
-                return Err(Error::InvalidPackage {
-                    pkgname: format!(
-                        "Checksum mismatch: expected {}, got {}",
-                        expected_hash, actual_hash
-                    ),
-                });
-            }
+        // Verify the assembled bytes against the client-declared SHA256. This is
+        // mandatory: a session with no expected hash cannot be integrity-checked,
+        // so fail closed rather than publish unverified bytes.
+        let expected_hash = session
+            .sha256
+            .as_ref()
+            .ok_or_else(|| Error::InvalidPackage {
+                pkgname: "Upload session is missing the expected SHA256 checksum".to_string(),
+            })?;
+        let actual_hash = format!("{:x}", hasher.finalize());
+        if &actual_hash != expected_hash {
+            return Err(Error::InvalidPackage {
+                pkgname: format!("Checksum mismatch: expected {expected_hash}, got {actual_hash}"),
+            });
         }
 
         Ok(assembled_path)

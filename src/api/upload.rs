@@ -144,6 +144,17 @@ pub async fn initiate_upload(
         });
     }
 
+    // A SHA256 is required up front so the completed upload can always be
+    // integrity-checked on assembly; refuse to start an unverifiable upload.
+    match &req.sha256 {
+        Some(hash) if !hash.is_empty() => {}
+        _ => {
+            return Err(Error::InvalidPackage {
+                pkgname: "sha256 is required to verify upload integrity".to_string(),
+            });
+        }
+    }
+
     let repo = req
         .repo
         .unwrap_or_else(|| state.config.storage.default_repo.clone());
@@ -330,9 +341,9 @@ pub async fn complete_upload(
         });
     }
 
-    // TODO: Verify checksums match (future enhancement)
-
-    // Assemble chunks to disk
+    // Reassemble the chunks and verify the result against the client-declared
+    // SHA256. assemble_chunks fails closed if the hash is absent or mismatched,
+    // so no unverified package reaches storage.
     let assembled_path = state.upload_store.assemble_chunks(&upload_id).await?;
 
     // Read assembled file for processing (extract PKGINFO and calculate SHA256)
