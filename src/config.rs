@@ -10,13 +10,26 @@ pub struct Config {
     pub auth: Option<AuthConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct AuthConfig {
     pub github_client_id: String,
     pub allowed_users: Vec<String>,
     pub jwt_secret: String,
     #[serde(default = "default_jwt_expiration_secs")]
     pub jwt_expiration_secs: i64,
+}
+
+// Hand-written Debug that redacts the signing secret so it never reaches logs
+// (the whole Config is Debug-logged at startup).
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthConfig")
+            .field("github_client_id", &self.github_client_id)
+            .field("allowed_users", &self.allowed_users)
+            .field("jwt_secret", &"<redacted>")
+            .field("jwt_expiration_secs", &self.jwt_expiration_secs)
+            .finish()
+    }
 }
 
 fn default_jwt_expiration_secs() -> i64 {
