@@ -23,9 +23,9 @@ pub async fn serve_file(
         || filename.ends_with(".db.tar.gz")
         || filename.ends_with(".files.tar.gz")
     {
-        // Database files are in {repo}/os/{arch}/ for URL compatibility
-        let db_dir = state.storage.db_dir(&repo, &arch)?;
-        db_dir.join(&filename)
+        // Database files are in {repo}/os/{arch}/ for URL compatibility.
+        // db_file_path validates the filename to prevent directory traversal.
+        state.storage.db_file_path(&repo, &arch, &filename)?
     } else if filename.ends_with(".pkg.tar.zst") || filename.ends_with(".pkg.tar.zst.sig") {
         // Package files are in flat storage
         // Verify the package exists and arch matches (or is "any")

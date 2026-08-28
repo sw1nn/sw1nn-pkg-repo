@@ -152,6 +152,18 @@ impl Storage {
         Ok(path)
     }
 
+    /// Get the path for a database file within `{repo}/os/{arch}/`, validating
+    /// the filename component to prevent directory traversal.
+    pub fn db_file_path(&self, repo: &str, arch: &str, filename: &str) -> Result<PathBuf> {
+        validate_path_component(filename)?;
+
+        let path = self.db_dir(repo, arch)?.join(filename);
+
+        validate_path_within_base(&self.base_path, &path)?;
+
+        Ok(path)
+    }
+
     /// Store a package file and its metadata
     ///
     /// Uses atomic file creation to prevent TOCTOU race conditions.
