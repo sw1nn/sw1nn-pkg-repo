@@ -1,6 +1,15 @@
 # Changelog
 
 - - -
+## v3.0.0 - 2026-08-28
+#### Bug Fixes
+- (**config**) redact jwt_secret in Debug output - (cf6d832) - Neale Swinnerton
+- (**metadata**) cap .PKGINFO read to prevent decompression bomb - (3118c62) - Neale Swinnerton
+- (**repo**) validate db filename to prevent path traversal - (4809949) - Neale Swinnerton
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**upload**) require sha256 to verify upload integrity - (588db97) - Neale Swinnerton
+
+- - -
+
 ## v2.13.0 - 2026-08-26
 #### Features
 - (**ctl**) configurable columns for list output - (d3515b3) - Neale Swinnerton
