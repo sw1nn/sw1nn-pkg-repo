@@ -1,6 +1,6 @@
 [package]
 name = "sw1nn-pkg-repo"
-version = "3.0.0"
+version = "4.0.0"
 edition = "2024"
 
 [dependencies]
