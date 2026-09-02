@@ -52,7 +52,7 @@ pub struct PackageCleanupDetail {
     tag = "packages"
 )]
 pub async fn apply_cleanup_policy(
-    _user: crate::auth::AuthenticatedUser,
+    user: crate::auth::PkgAdmin,
     State(state): State<Arc<AppState>>,
     Json(request): Json<CleanupPolicyRequest>,
 ) -> Result<impl IntoResponse> {
@@ -140,6 +140,8 @@ pub async fn apply_cleanup_policy(
     };
 
     tracing::info!(
+        user = %user.username,
+        sub = %user.sub,
         pattern = %request.package_pattern,
         repo = %repo,
         arch = %arch,

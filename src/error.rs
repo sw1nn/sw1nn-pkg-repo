@@ -34,14 +34,11 @@ pub enum Error {
     #[display("Forbidden: {reason}")]
     Forbidden { reason: String },
 
-    #[display("GitHub API error: {msg}")]
-    GitHubApi { msg: String },
+    #[display("Token verification failed: {msg}")]
+    TokenVerification { msg: String },
 
-    #[display("JWT error: {msg}")]
-    Jwt { msg: String },
-
-    #[display("Authentication not configured")]
-    AuthNotConfigured,
+    #[display("JWKS error: {msg}")]
+    Jwks { msg: String },
 }
 
 impl std::error::Error for Error {}
@@ -141,24 +138,22 @@ impl axum::response::IntoResponse for Error {
                     format!("Forbidden: {reason}"),
                 )
             }
-            Error::GitHubApi { msg } => {
-                tracing::error!("GitHub API error: {msg}");
-                (
-                    axum::http::StatusCode::BAD_GATEWAY,
-                    "GitHub API error".to_string(),
-                )
-            }
-            Error::Jwt { msg } => {
-                tracing::warn!("JWT error: {msg}");
+            Error::TokenVerification { msg } => {
+                // The reason stays in the log; the client learns only that the
+                // token was refused.
+                tracing::warn!(msg, "Token verification failed");
                 (
                     axum::http::StatusCode::UNAUTHORIZED,
                     "Invalid or expired token".to_string(),
                 )
             }
-            Error::AuthNotConfigured => (
-                axum::http::StatusCode::NOT_IMPLEMENTED,
-                "Authentication is not configured on this server".to_string(),
-            ),
+            Error::Jwks { msg } => {
+                tracing::error!(msg, "JWKS error");
+                (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "Unable to verify credentials".to_string(),
+                )
+            }
         };
 
         let body = axum::Json(serde_json::json!({

@@ -3,10 +3,12 @@
 #![allow(dead_code)]
 
 use axum::Router;
+use jsonwebtoken::DecodingKey;
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use sw1nn_pkg_repo::api::{AppState, create_api_router};
+use sw1nn_pkg_repo::auth::JwksCache;
 use sw1nn_pkg_repo::config::Config;
 use sw1nn_pkg_repo::db_actor::DbUpdateActor;
 use sw1nn_pkg_repo::repo::serve_file;
@@ -53,8 +55,8 @@ pub async fn setup_test_app_with_storage() -> (Router, Arc<Storage>) {
         config: config.clone(),
         upload_store,
         db_update: db_update_handle,
-        http_client: reqwest::Client::new(),
         keyring: sw1nn_pkg_repo::signature::Keyring::default(),
+        jwks: Arc::new(JwksCache::with_keys(Vec::<(String, DecodingKey)>::new())),
     });
 
     // Build API routes
@@ -83,7 +85,12 @@ pub async fn setup_test_app_with_storage() -> (Router, Arc<Storage>) {
     (router, storage)
 }
 
-pub async fn setup_test_app_with_auth(auth: sw1nn_pkg_repo::config::AuthConfig) -> Router {
+/// Build the test app with authentication enabled, verifying tokens against
+/// `jwks` rather than a live identity provider.
+pub async fn setup_test_app_with_auth(
+    auth: sw1nn_pkg_repo::config::AuthConfig,
+    jwks: JwksCache,
+) -> Router {
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     std::mem::forget(temp_dir);
@@ -105,8 +112,8 @@ pub async fn setup_test_app_with_auth(auth: sw1nn_pkg_repo::config::AuthConfig) 
         config: config.clone(),
         upload_store,
         db_update: db_update_handle,
-        http_client: reqwest::Client::new(),
         keyring: sw1nn_pkg_repo::signature::Keyring::default(),
+        jwks: Arc::new(jwks),
     });
 
     let (api_router, api_doc) = create_api_router(state.clone()).split_for_parts();

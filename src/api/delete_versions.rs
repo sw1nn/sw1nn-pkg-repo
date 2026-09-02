@@ -75,7 +75,7 @@ fn version_matches_range(version_str: &str, range: &semver::VersionReq) -> Resul
     tag = "packages"
 )]
 pub async fn delete_versions(
-    _user: crate::auth::AuthenticatedUser,
+    user: crate::auth::PkgAdmin,
     State(state): State<Arc<AppState>>,
     AxumPath(name): AxumPath<String>,
     Json(request): Json<DeleteVersionsRequest>,
@@ -170,6 +170,8 @@ pub async fn delete_versions(
     state.db_update.request_update(&repo, &arch).await;
 
     tracing::info!(
+        user = %user.username,
+        sub = %user.sub,
         package = %name,
         repo = %repo,
         arch = %arch,

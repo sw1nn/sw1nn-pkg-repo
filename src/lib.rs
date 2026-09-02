@@ -98,14 +98,32 @@ pub async fn run_service(config_path: Option<&str>) -> Result<(), Box<dyn std::e
         }
     };
 
+    // JWKS cache for offline access-token verification. Keys are fetched lazily
+    // on the first authenticated request, so a slow identity provider cannot
+    // delay startup.
+    let jwks = Arc::new(match &config.auth {
+        Some(auth) => {
+            tracing::info!(
+                issuer = %auth.issuer,
+                client_id = %auth.client_id,
+                "Authentication enabled"
+            );
+            auth::JwksCache::new(&auth.jwks_uri, reqwest::Client::new())
+        }
+        None => {
+            tracing::warn!("No [auth] section configured; all endpoints are publicly accessible");
+            auth::JwksCache::new(String::new(), reqwest::Client::new())
+        }
+    });
+
     // Create shared state
     let state = Arc::new(AppState {
         storage,
         config: config.clone(),
         upload_store,
         db_update: db_update_handle,
-        http_client: reqwest::Client::new(),
         keyring,
+        jwks,
     });
 
     // Build API routes using utoipa_axum router

@@ -1,3 +1,8 @@
+mod authelia;
+mod client;
+mod token_store;
+
+use crate::client::ApiClient;
 use byte_unit::{Byte, UnitType};
 use clap::{Arg, CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
@@ -117,9 +122,9 @@ enum Commands {
         #[arg(long)]
         full_signature: bool,
     },
-    /// Log in to the repository via GitHub
+    /// Log in via the Authelia device flow
     Login,
-    /// Log out (remove stored token)
+    /// Log out (remove stored credentials)
     Logout,
     /// Show authentication status
     Status,
@@ -266,7 +271,10 @@ async fn main() {
     let base_url =
         std::env::var("SW1NN_REPO_URL").unwrap_or_else(|_| "https://repo.sw1nn.net".to_string());
 
-    let client = build_authenticated_client();
+    let client = ApiClient::new().unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to build HTTP client");
+        process::exit(1);
+    });
 
     // Handle subcommands or backwards-compatible positional args
     match args.command {
@@ -304,7 +312,7 @@ async fn main() {
             .await;
         }
         Some(Commands::Login) => {
-            run_login(&base_url).await;
+            run_login().await;
         }
         Some(Commands::Logout) => {
             run_logout();
@@ -324,7 +332,7 @@ async fn main() {
     }
 }
 
-async fn run_upload(client: &reqwest::Client, base_url: &str, package_files: Vec<String>) {
+async fn run_upload(client: &ApiClient, base_url: &str, package_files: Vec<String>) {
     if package_files.is_empty() {
         tracing::error!("No package files specified");
         process::exit(1);
@@ -400,7 +408,7 @@ fn contains_wildcard(s: &str) -> bool {
 }
 
 async fn run_delete(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     name: String,
     versions: Vec<String>,
@@ -415,7 +423,7 @@ async fn run_delete(
 }
 
 async fn run_delete_exact(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     name: &str,
     versions: Vec<String>,
@@ -442,7 +450,7 @@ async fn run_delete_exact(
 }
 
 async fn run_delete_wildcard(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     name_pattern: &str,
     versions: Vec<String>,
@@ -542,7 +550,7 @@ async fn run_delete_wildcard(
 }
 
 async fn run_replace(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     package_file: &str,
     repo_filter: Option<String>,
@@ -760,7 +768,7 @@ fn configure_colors(mode: ColorMode) {
 
 #[allow(clippy::too_many_arguments)]
 async fn run_list(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     name_filter: Option<String>,
     repo_filter: Option<String>,
@@ -819,11 +827,11 @@ async fn run_list(
 }
 
 async fn list_packages(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
 ) -> Result<Vec<Package>, Box<dyn std::error::Error>> {
     let url = format!("{base_url}/api/packages");
-    let response = client.get(&url).send().await?;
+    let response = client.send(client.get(&url)).await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -1034,7 +1042,7 @@ fn format_version(version: &str) -> String {
 
 /// Upload a package using the simple (non-chunked) API
 async fn upload_chunked(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     path: &Path,
     index: usize,
@@ -1067,7 +1075,7 @@ async fn upload_chunked(
     };
 
     let init_url = format!("{}/api/packages/upload/initiate", base_url);
-    let response = client.post(&init_url).json(&init_req).send().await?;
+    let response = client.send(client.post(&init_url).json(&init_req)).await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -1126,10 +1134,12 @@ async fn upload_chunked(
         let sig_url = format!("{}/api/packages/upload/{}/signature", base_url, upload_id);
 
         let response = client
-            .post(&sig_url)
-            .header("Content-Type", "application/octet-stream")
-            .body(sig_data)
-            .send()
+            .send(
+                client
+                    .post(&sig_url)
+                    .header("Content-Type", "application/octet-stream")
+                    .body(sig_data),
+            )
             .await?;
 
         if !response.status().is_success() {
@@ -1147,9 +1157,7 @@ async fn upload_chunked(
 
     let complete_url = format!("{}/api/packages/upload/{}/complete", base_url, upload_id);
     let response = client
-        .post(&complete_url)
-        .json(&complete_req)
-        .send()
+        .send(client.post(&complete_url).json(&complete_req))
         .await?;
 
     if !response.status().is_success() {
@@ -1164,7 +1172,7 @@ async fn upload_chunked(
 
 /// Upload a chunk with retry logic
 async fn upload_chunk_with_retry(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     upload_id: &str,
     chunk_number: u32,
@@ -1180,10 +1188,12 @@ async fn upload_chunk_with_retry(
         );
 
         let response = client
-            .post(&url)
-            .header("Content-Type", "application/octet-stream")
-            .body(data.to_vec())
-            .send()
+            .send(
+                client
+                    .post(&url)
+                    .header("Content-Type", "application/octet-stream")
+                    .body(data.to_vec()),
+            )
             .await;
 
         match response {
@@ -1247,7 +1257,7 @@ async fn upload_chunk_with_retry(
 
 /// Delete package versions from the repository
 async fn delete_versions(
-    client: &reqwest::Client,
+    client: &ApiClient,
     base_url: &str,
     name: &str,
     versions: Vec<String>,
@@ -1262,7 +1272,7 @@ async fn delete_versions(
         arch,
     };
 
-    let response = client.post(&url).json(&request).send().await?;
+    let response = client.send(client.post(&url).json(&request)).await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -1302,220 +1312,115 @@ fn print_delete_success(name: &str, response: &DeleteVersionsResponse) {
     println!();
 }
 
-// -- Token storage --
-
-fn token_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from(".config"))
-        .join("sw1nn-pkg-repo")
-        .join("token")
-}
-
-fn load_token() -> Option<String> {
-    std::fs::read_to_string(token_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn save_token(token: &str) {
-    let path = token_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap_or_else(|e| {
-            tracing::error!(error = %e, "Failed to create config directory");
-            process::exit(1);
-        });
-    }
-    std::fs::write(&path, token).unwrap_or_else(|e| {
-        tracing::error!(error = %e, "Failed to save token");
-        process::exit(1);
-    });
-    // Set restrictive permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-}
-
-fn delete_token() -> bool {
-    let path = token_path();
-    if path.exists() {
-        std::fs::remove_file(&path).is_ok()
-    } else {
-        false
-    }
-}
-
-fn build_authenticated_client() -> reqwest::Client {
-    let mut builder = reqwest::Client::builder();
-
-    if let Some(token) = load_token() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
-            headers.insert(reqwest::header::AUTHORIZATION, value);
-        }
-        builder = builder.default_headers(headers);
-    }
-
-    builder.build().unwrap_or_else(|e| {
-        tracing::error!(error = %e, "Failed to build HTTP client");
-        process::exit(1);
-    })
-}
-
 // -- Login/Logout/Status commands --
 
-#[derive(Debug, Deserialize)]
-struct DeviceCodeApiResponse {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
-    #[allow(dead_code)]
-    expires_in: u64,
-    interval: u64,
-}
+/// Run the OIDC device authorization grant and store the resulting tokens.
+async fn run_login() {
+    let http = reqwest::Client::new();
+    let provider = authelia::Provider::default();
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum DeviceTokenResult {
-    Success {
-        token: String,
-        username: String,
-        expires_at: i64,
-    },
-    Pending {
-        #[allow(dead_code)]
-        status: String,
-    },
-}
-
-async fn run_login(base_url: &str) {
-    let client = reqwest::Client::new();
-
-    // Request device code
-    let url = format!("{base_url}/api/auth/device/code");
-    let response = client.post(&url).send().await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "Failed to contact server");
-        process::exit(1);
-    });
-
-    if response.status() == reqwest::StatusCode::NOT_IMPLEMENTED {
-        println!(
-            "{}",
-            "Authentication is not configured on this server.".yellow()
-        );
-        process::exit(1);
-    }
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        tracing::error!("Failed to start login - HTTP {status}: {body}");
-        process::exit(1);
-    }
-
-    let device_code: DeviceCodeApiResponse = response.json().await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "Failed to parse response");
-        process::exit(1);
-    });
-
-    println!();
-    println!("{}", "GitHub Device Authorization".cyan().bold());
-    println!("{}", "=".repeat(40));
-    println!("  Open:  {}", device_code.verification_uri.yellow().bold());
-    println!("  Code:  {}", device_code.user_code.green().bold());
-    println!("{}", "=".repeat(40));
-    println!();
-    println!("Waiting for authorization...");
-
-    // Poll for token
-    let poll_url = format!("{base_url}/api/auth/device/token");
-    let interval = std::time::Duration::from_secs(device_code.interval.max(5));
-
-    loop {
-        tokio::time::sleep(interval).await;
-
-        let response = client
-            .post(&poll_url)
-            .json(&serde_json::json!({"device_code": device_code.device_code}))
-            .send()
-            .await;
-
-        let response = match response {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(error = %e, "Poll request failed, retrying...");
-                continue;
-            }
-        };
-
-        let status = response.status();
-
-        if status == reqwest::StatusCode::ACCEPTED {
-            // Still pending
-            continue;
-        }
-
-        if status == reqwest::StatusCode::FORBIDDEN {
-            let body = response.text().await.unwrap_or_default();
-            println!("\n{}", format!("Login denied: {body}").red().bold());
-            process::exit(1);
-        }
-
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            tracing::error!("Login failed - HTTP {status}: {body}");
-            process::exit(1);
-        }
-
-        let result: DeviceTokenResult = response.json().await.unwrap_or_else(|e| {
-            tracing::error!(error = %e, "Failed to parse token response");
+    let device = authelia::start_device_authorization(&http, &provider)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to start login");
             process::exit(1);
         });
 
-        match result {
-            DeviceTokenResult::Success {
-                token,
-                username,
-                expires_at,
-            } => {
-                save_token(&token);
-                let expires = chrono::DateTime::from_timestamp(expires_at, 0)
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
-                    .unwrap_or_else(|| "unknown".to_string());
-                println!();
-                println!("{}", format!("Logged in as {username}").green().bold());
-                println!("  Token saved to: {}", token_path().display());
-                println!("  Expires: {expires}");
-                println!();
-                return;
-            }
-            DeviceTokenResult::Pending { .. } => continue,
-        }
+    // `verification_uri_complete` embeds the user code, so approving is one
+    // click. The bare URI plus the code is the fallback the RFC guarantees.
+    let url = device
+        .verification_uri_complete
+        .as_deref()
+        .unwrap_or(&device.verification_uri);
+
+    println!();
+    println!("{}", "Authelia Device Authorization".cyan().bold());
+    println!("{}", "=".repeat(40));
+    println!("  Open:  {}", url.yellow().bold());
+    println!("  Code:  {}", device.user_code.green().bold());
+    println!("{}", "=".repeat(40));
+    println!();
+
+    open_in_browser(url);
+
+    println!("Waiting for authorization...");
+
+    let tokens = authelia::poll_for_tokens(&http, &provider, &device)
+        .await
+        .unwrap_or_else(|e| {
+            println!();
+            tracing::error!(error = %e, "Login failed");
+            process::exit(1);
+        });
+
+    let username = tokens.username.clone().unwrap_or_else(|| "?".to_owned());
+    let expires = format_expiry(tokens.expires_at);
+
+    token_store::save(&tokens).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to store credentials");
+        process::exit(1);
+    });
+
+    println!();
+    println!("{}", format!("Logged in as {username}").green().bold());
+    println!("  Access token expires: {expires}");
+    println!();
+}
+
+/// Best-effort browser launch. The URL is printed either way, so a failure
+/// here is not worth interrupting the login for.
+fn open_in_browser(url: &str) {
+    let opened = std::process::Command::new("xdg-open")
+        .arg(url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .is_ok();
+
+    if !opened {
+        tracing::debug!("Could not launch a browser; open the URL above manually");
     }
 }
 
 fn run_logout() {
-    if delete_token() {
+    if token_store::clear() {
         println!("{}", "Logged out successfully.".green().bold());
     } else {
-        println!("{}", "No token found — already logged out.".yellow());
+        println!("{}", "No stored credentials — already logged out.".yellow());
     }
 }
 
 fn run_status() {
-    let path = token_path();
-    match load_token() {
-        Some(_) => {
-            println!("{}", "Authenticated".green().bold());
-            println!("  Token: {}", path.display());
-        }
-        None => {
-            println!("{}", "Not authenticated".yellow().bold());
-            println!("  Run '{}' to log in", "sw1nn-pkg-ctl login".cyan());
-        }
+    let Some(tokens) = token_store::load() else {
+        println!("{}", "Not authenticated".yellow().bold());
+        println!("  Run '{}' to log in", "sw1nn-pkg-ctl login".cyan());
+        return;
+    };
+
+    let username = tokens.username.as_deref().unwrap_or("?");
+    println!("{}", format!("Authenticated as {username}").green().bold());
+    println!(
+        "  Access token expires: {}",
+        format_expiry(tokens.expires_at)
+    );
+
+    if tokens.is_stale(0) {
+        let renewable = tokens.refresh_token.is_some();
+        println!(
+            "  {}",
+            if renewable {
+                "Access token expired; it will be renewed on the next request.".yellow()
+            } else {
+                "Access token expired and cannot be renewed — log in again.".red()
+            }
+        );
     }
+}
+
+fn format_expiry(unix_ts: i64) -> String {
+    chrono::DateTime::from_timestamp(unix_ts, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// Print success message for uploaded package

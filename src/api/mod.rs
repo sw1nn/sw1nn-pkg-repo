@@ -1,4 +1,3 @@
-pub mod auth;
 pub mod cleanup_policy;
 pub mod delete_versions;
 mod upload;
@@ -27,8 +26,8 @@ pub struct AppState {
     pub config: Config,
     pub upload_store: UploadSessionStore,
     pub db_update: DbUpdateHandle,
-    pub http_client: reqwest::Client,
     pub keyring: Keyring,
+    pub jwks: Arc<crate::auth::JwksCache>,
 }
 
 /// List packages with optional filtering
@@ -47,6 +46,7 @@ pub struct AppState {
     tag = "packages"
 )]
 pub async fn list_packages(
+    _user: crate::auth::AuthenticatedUser,
     State(state): State<Arc<AppState>>,
     Query(query): Query<PackageQuery>,
 ) -> Result<Json<Vec<Package>>> {
@@ -102,7 +102,7 @@ pub async fn list_packages(
     tag = "packages"
 )]
 pub async fn delete_package(
-    _user: crate::auth::AuthenticatedUser,
+    user: crate::auth::PkgAdmin,
     State(state): State<Arc<AppState>>,
     AxumPath(name): AxumPath<String>,
     Query(query): Query<PackageQuery>,
@@ -119,6 +119,15 @@ pub async fn delete_package(
 
     // Delete package
     state.storage.delete_package(&package).await?;
+
+    tracing::info!(
+        user = %user.username,
+        sub = %user.sub,
+        package = %package.name,
+        version = %package.version,
+        repo = %repo,
+        "Deleted package"
+    );
 
     crate::metrics::record_package_deleted(&repo, 1);
 
@@ -152,11 +161,11 @@ pub async fn delete_package(
     tag = "packages"
 )]
 pub async fn rebuild_db(
-    _user: crate::auth::AuthenticatedUser,
+    user: crate::auth::PkgAdmin,
     State(state): State<Arc<AppState>>,
     AxumPath((repo, arch)): AxumPath<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    tracing::info!(repo = %repo, arch = %arch, "Force rebuild requested via API");
+    tracing::info!(user = %user.username, repo = %repo, arch = %arch, "Force rebuild requested via API");
 
     // Force immediate rebuild (bypass debounce)
     state.db_update.force_rebuild(&repo, &arch).await;
@@ -300,8 +309,6 @@ pub fn create_api_router(state: Arc<AppState>) -> OpenApiRouter {
         .routes(routes!(upload::upload_signature))
         .routes(routes!(upload::complete_upload))
         .routes(routes!(upload::abort_upload))
-        .route("/auth/device/code", post(auth::device_code))
-        .route("/auth/device/token", post(auth::device_token))
         .with_state(state)
 }
 

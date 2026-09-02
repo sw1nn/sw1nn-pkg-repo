@@ -59,6 +59,68 @@ Specify a custom configuration file:
 sw1nn-pkg-repod --config /path/to/custom-config.toml
 ```
 
+## Authentication
+
+The API endpoints accept OIDC access tokens issued by
+[Authelia](https://www.authelia.com/). The server verifies them offline against
+a cached JWKS — it never calls the introspection or userinfo endpoints, so the
+identity provider is not in the request path for uploads.
+
+Add an `[auth]` section to `config.toml` to turn this on. Every field has a
+default, so the section can be empty:
+
+```toml
+[auth]
+issuer = "https://auth.sw1nn.net"
+jwks_uri = "https://auth.sw1nn.net/jwks.json"
+client_id = "sw1nn-pkg-cli"
+leeway_secs = 60
+```
+
+> [!WARNING]
+> Without an `[auth]` section, every endpoint is publicly accessible.
+
+A token is accepted only when its signature verifies, its `iss` matches, and
+its `client_id` is this service's own. The `client_id` check is what stops a
+token minted for another CLI being replayed here — Authelia's device grant
+returns an empty `aud`, so an audience check is not available.
+
+### Authorization
+
+Access is granted by Authelia group membership. Scopes are not an authorization
+boundary: the CLI is a public client, so a caller can request any scope it
+likes.
+
+| Operation | Required group |
+| --- | --- |
+| List packages | any valid token |
+| Upload | `pkg-publish` |
+| Delete, rebuild database, apply cleanup policy | `pkg-admin` |
+
+Membership of `admins` grants nothing on its own.
+
+The pacman-facing routes (`/{repo}/os/{arch}/{filename}`) stay unauthenticated,
+so installing packages needs no credentials.
+
+### Logging in
+
+```bash
+sw1nn-pkg-ctl login     # device flow: approve in a browser
+sw1nn-pkg-ctl status    # who you are and when the token expires
+sw1nn-pkg-ctl logout    # discard stored credentials
+```
+
+`login` prints a URL and a user code, and opens the URL if it can. Tokens are
+kept in the Secret Service (KeepassXC on these machines), falling back to a
+`0600` file under `$XDG_STATE_HOME/sw1nn-pkg-repo/` on headless hosts.
+
+The access token lasts an hour and is renewed automatically from the refresh
+token, so routine use needs one browser trip a month. When renewal fails the
+command exits non-zero and tells you to log in again.
+
+Point the CLI at a different deployment with `SW1NN_AUTH_ISSUER` and
+`SW1NN_AUTH_CLIENT_ID`, and at a different repository with `SW1NN_REPO_URL`.
+
 ## Running
 
 ```bash
@@ -145,8 +207,13 @@ sudo pacman -S my-package
 ```
 src/
 ├── bin/
-│   ├── sw1nn-pkg-repod.rs     # Service binary
-│   └── sw1nn-pkg-upload.rs    # Upload client binary
+│   ├── sw1nn-pkg-repod.rs      # Service binary
+│   └── sw1nn-pkg-ctl/          # Client binary
+│       ├── main.rs             #   commands and output
+│       ├── authelia.rs         #   OIDC device flow (RFC 8628)
+│       ├── client.rs           #   HTTP client with token renewal
+│       └── token_store.rs      #   Secret Service / file credential storage
+├── auth.rs                     # Access-token verification and group checks
 ├── lib.rs                      # Library code
 └── ...
 
@@ -194,6 +261,8 @@ RUST_LOG=debug cargo run
 - **flate2** - gzip compression
 - **zstd** - zstd decompression for packages
 - **tokio** - Async runtime
+- **jsonwebtoken** - Access-token verification against Authelia's JWKS
+- **keyring** - Secret Service credential storage for the client
 
 ## License
 

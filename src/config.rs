@@ -10,30 +10,56 @@ pub struct Config {
     pub auth: Option<AuthConfig>,
 }
 
-#[derive(Deserialize, Clone)]
+/// Verification parameters for Authelia-issued OIDC access tokens.
+///
+/// Every field has a default matching the live deployment, so an empty
+/// `[auth]` section is enough to turn authentication on.
+#[derive(Debug, Deserialize, Clone)]
 pub struct AuthConfig {
-    pub github_client_id: String,
-    pub allowed_users: Vec<String>,
-    pub jwt_secret: String,
-    #[serde(default = "default_jwt_expiration_secs")]
-    pub jwt_expiration_secs: i64,
+    /// Expected `iss` claim, checked exactly.
+    #[serde(default = "default_issuer")]
+    pub issuer: String,
+
+    /// JWKS endpoint used for offline signature verification.
+    #[serde(default = "default_jwks_uri")]
+    pub jwks_uri: String,
+
+    /// OIDC client id this service accepts. Tokens minted for any other client
+    /// are rejected — this is the replay boundary between services, because
+    /// Authelia's device grant leaves `aud` empty.
+    #[serde(default = "default_client_id")]
+    pub client_id: String,
+
+    /// Clock leeway applied to `exp` and `nbf`, in seconds.
+    #[serde(default = "default_leeway_secs")]
+    pub leeway_secs: u64,
 }
 
-// Hand-written Debug that redacts the signing secret so it never reaches logs
-// (the whole Config is Debug-logged at startup).
-impl std::fmt::Debug for AuthConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthConfig")
-            .field("github_client_id", &self.github_client_id)
-            .field("allowed_users", &self.allowed_users)
-            .field("jwt_secret", &"<redacted>")
-            .field("jwt_expiration_secs", &self.jwt_expiration_secs)
-            .finish()
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            issuer: default_issuer(),
+            jwks_uri: default_jwks_uri(),
+            client_id: default_client_id(),
+            leeway_secs: default_leeway_secs(),
+        }
     }
 }
 
-fn default_jwt_expiration_secs() -> i64 {
-    604800 // 7 days
+fn default_issuer() -> String {
+    "https://auth.sw1nn.net".to_owned()
+}
+
+fn default_jwks_uri() -> String {
+    "https://auth.sw1nn.net/jwks.json".to_owned()
+}
+
+fn default_client_id() -> String {
+    "sw1nn-pkg-cli".to_owned()
+}
+
+fn default_leeway_secs() -> u64 {
+    60
 }
 
 #[derive(Deserialize, Clone)]
@@ -150,20 +176,6 @@ impl Config {
         // If canonicalize fails (e.g., path doesn't exist yet), keep the absolute path
         if let Ok(canonical) = config.storage.data_path.canonicalize() {
             config.storage.data_path = canonical;
-        }
-
-        // Validate auth config if present
-        if let Some(ref auth) = config.auth {
-            if auth.jwt_secret.len() < 32 {
-                return Err(Error::Config {
-                    msg: "jwt_secret must be at least 32 characters".to_string(),
-                });
-            }
-            if auth.allowed_users.is_empty() {
-                return Err(Error::Config {
-                    msg: "allowed_users must not be empty when auth is configured".to_string(),
-                });
-            }
         }
 
         Ok(config)

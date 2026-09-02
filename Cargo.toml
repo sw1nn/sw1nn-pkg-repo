@@ -66,6 +66,10 @@ zstd = "0.13"
 # OpenPGP signature verification (openssl backend avoids a nettle build dep)
 sequoia-openpgp = { version = "2.4", default-features = false, features = ["crypto-openssl"] }
 anyhow = "1.0"
+keyring = "4.2"
+base64 = "0.22"
 
 [dev-dependencies]
+rand = "0.8"
+rsa = "0.9"
 tempfile = "3.27"

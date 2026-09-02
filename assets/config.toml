@@ -12,19 +12,28 @@ default_repo = "sw1nn"
 default_arch = "x86_64"
 
 # [auth]
-# Uncomment to enable GitHub OAuth authentication on write endpoints.
+# Uncomment to require an Authelia-issued access token on the API endpoints.
 # Without this section, all endpoints are publicly accessible.
 #
-# GitHub OAuth App client ID (create at https://github.com/settings/applications/new)
-# Use "Device Flow" authorization — no callback URL needed.
-# github_client_id = "Iv1.xxxxxxxxxxxxxxxx"
+# Every field below has a default matching the live deployment, so an empty
+# [auth] section is enough to turn authentication on.
 #
-# GitHub usernames allowed to write to this repository
-# allowed_users = ["sw1nn"]
+# Expected `iss` claim, checked exactly.
+# issuer = "https://auth.sw1nn.net"
 #
-# Secret key for signing JWTs (minimum 32 characters)
-# Generate with: openssl rand -hex 32
-# jwt_secret = "change-me-to-a-random-64-char-hex-string-at-least-32-chars!!"
+# JWKS endpoint used to verify token signatures offline. Fetched lazily and
+# cached; refetched only when a token presents an unknown key id.
+# jwks_uri = "https://auth.sw1nn.net/jwks.json"
 #
-# JWT token lifetime in seconds (default: 604800 = 7 days)
-# jwt_expiration_secs = 604800
+# OIDC client id this service accepts. Tokens minted for any other client are
+# rejected. This is the replay boundary between services, because Authelia's
+# device grant leaves `aud` empty.
+# client_id = "sw1nn-pkg-cli"
+#
+# Clock leeway applied to `exp` and `nbf`, in seconds.
+# leeway_secs = 60
+#
+# Authorization is by Authelia group, not by anything in this file:
+#   list packages                          any valid token
+#   upload                                 pkg-publish
+#   delete, rebuild, cleanup policy        pkg-admin
