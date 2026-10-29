@@ -1,6 +1,14 @@
 # Changelog
 
 - - -
+## v4.1.0 - 2026-10-29
+#### Features
+- (**ctl**) show upload sizes in binary units - (d9670e9) - Neale Swinnerton
+#### Miscellaneous Chores
+- add .gitattributes - (55ed3c3) - Neale Swinnerton
+
+- - -
+
 ## v4.0.0 - 2026-09-02
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**auth**) verify Authelia OIDC tokens instead of self-signed JWTs - (f2b6823) - Neale Swinnerton
