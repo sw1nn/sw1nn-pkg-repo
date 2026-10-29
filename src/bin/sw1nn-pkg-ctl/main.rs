@@ -1438,9 +1438,9 @@ fn print_upload_success(package: &Package, index: usize, total: usize) {
     println!("  {:>9}  {}", "Repo:".cyan().bold(), package.repo);
     println!("  {:>9}  {}", "Filename:".cyan().bold(), package.filename);
     println!(
-        "  {:>9}  {} bytes",
+        "  {:>9}  {}",
         "Size:".cyan().bold(),
-        package.size.to_string().yellow()
+        format_size(package.size, SizeUnit::Binary).yellow()
     );
     println!(
         "  {:>9}  {}",
@@ -1719,5 +1719,13 @@ mod tests {
 
         assert!(offered.is_empty(), "offered {offered:?}");
         Ok(())
+    }
+
+    #[test]
+    fn formats_sizes_without_raw_byte_counts() {
+        assert_eq!(format_size(4_418_871, SizeUnit::Binary), "4.2 MiB");
+        assert_eq!(format_size(48_539_413, SizeUnit::Binary), "46.3 MiB");
+        assert_eq!(format_size(4_418_871, SizeUnit::Decimal), "4.4 MB");
+        assert_eq!(format_size(4_418_871, SizeUnit::Bytes), "4418871 B");
     }
 }
